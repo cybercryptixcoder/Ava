@@ -134,3 +134,22 @@ describe("encryption at rest and passwords", () => {
     expect(hashPassword("correct horse")).not.toBe(h);
   });
 });
+
+describe("retention", () => {
+  it("deletes raw window titles even when they were never labeled", async () => {
+    const { makeApp, hours } = await import("./helpers");
+    const { runRetention } = await import("../src/core/retention");
+    const t = makeApp();
+    try {
+      t.svc.sources.activity.ingest({ device: "laptop", sessions: [{ app: "Code", title: "secret.c", started_at: "2026-10-05T13:00:00Z", ended_at: "2026-10-05T13:30:00Z", active_seconds: 1700 }] });
+      const has = () => !!t.svc.db.get<{ title_enc: string | null }>("SELECT title_enc FROM activity_sessions")!.title_enc;
+      runRetention(t.svc);
+      expect(has()).toBe(true);
+      t.clock.advance(hours(24 * 7));
+      runRetention(t.svc);
+      expect(has()).toBe(false);
+    } finally {
+      t.close();
+    }
+  });
+});

@@ -13,7 +13,12 @@ export function runRetention(svc: Services): Record<string, number> {
   const out = {
     evidence_purged: evidence.purgeDue(now),
     audio_purged: audio.purgeDue(now),
-    activity_titles: db.run("UPDATE activity_sessions SET title_enc = NULL WHERE title_enc IS NOT NULL AND labeled_at IS NOT NULL AND purge_title_after <= ?", [now.toISOString()]).changes,
+    // Titles go once labeled and past their retention date; if they can't be labeled (no model key),
+    // they go anyway at twice the retention period, so raw titles never accumulate.
+    activity_titles: db.run(
+      "UPDATE activity_sessions SET title_enc = NULL WHERE title_enc IS NOT NULL AND ((labeled_at IS NOT NULL AND purge_title_after <= ?) OR started_at < ?)",
+      [now.toISOString(), before(r.raw_activity_days * 2)],
+    ).changes,
     model_io: db.run("UPDATE model_calls SET input_enc = NULL, output_enc = NULL WHERE at < ? AND input_enc IS NOT NULL", [before(r.model_io_days)]).changes,
     snapshots: db.run("DELETE FROM snapshots WHERE at < ?", [before(r.snapshots_days)]).changes,
     canvas_events: db.run("DELETE FROM canvas_events WHERE consumed = 1 AND at < ?", [before(30)]).changes,
