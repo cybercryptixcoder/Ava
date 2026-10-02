@@ -39,13 +39,20 @@ export interface ModelResult<T = unknown> {
 }
 
 /** Low-level transport. The real one talks to the Anthropic API; tests inject a scripted one. */
+/** What the gateway knows about a call beyond the API parameters. The Anthropic provider ignores it; scripted test providers route on it. */
+export interface CallMeta {
+  purpose: string;
+  origin: "system" | "interactive";
+}
+
 export interface ModelProvider {
   readonly name: string;
-  create(params: Anthropic.MessageCreateParamsNonStreaming, signal?: AbortSignal): Promise<Anthropic.Message>;
+  create(params: Anthropic.MessageCreateParamsNonStreaming, signal?: AbortSignal, meta?: CallMeta): Promise<Anthropic.Message>;
   stream(
     params: Anthropic.MessageCreateParamsStreaming,
     onText: (delta: string) => void,
     signal?: AbortSignal,
+    meta?: CallMeta,
   ): Promise<Anthropic.Message>;
 }
 

@@ -1,4 +1,4 @@
-import { formatClock, type RuleAction } from "@ava/shared";
+import { formatClock, spanPhrase, type RuleAction } from "@ava/shared";
 import type { Settings } from "../config/settings";
 import type { Candidate, SuggestedOption } from "./candidates";
 import { freeBlocks, itemMetrics, openItems, type WorldItem, type WorldState } from "./world";
@@ -114,9 +114,9 @@ const freeBlock: BuiltinRule = {
         facts: {
           block_start: formatClock(block.start, w.tz),
           block_end: formatClock(block.end, w.tz),
-          block_minutes: `${remaining} minutes`,
+          block_minutes: spanPhrase(remaining),
         },
-        intent: `A ${remaining}-minute free block starts at ${formatClock(block.start, w.tz)}; suggest using it for one of the cited items.`,
+        intent: `${spanPhrase(remaining)} free from ${formatClock(block.start, w.tz)}; suggest using it for one of the cited items.`,
         suggested_options: [
           { label: `Start ${top.title}`, action: { kind: "start_executor", executor: "plan", item_id: top.id, instructions: `A plan for the next ${remaining} minutes on ${top.title}` } },
           ...(pending[1]

@@ -187,7 +187,7 @@ export class ModelGateway {
     const provider = this.preflight(req);
     const started = Date.now();
     try {
-      const msg = await provider.create(this.buildParams(req) as unknown as Anthropic.MessageCreateParamsNonStreaming, req.signal);
+      const msg = await provider.create(this.buildParams(req) as unknown as Anthropic.MessageCreateParamsNonStreaming, req.signal, { purpose: req.purpose, origin: req.origin });
       return this.finish(req, msg, started, null);
     } catch (e) {
       if (e instanceof BudgetExceededError) throw e;
@@ -209,6 +209,7 @@ export class ModelGateway {
           onText(d);
         },
         req.signal,
+        { purpose: req.purpose, origin: req.origin },
       );
       return this.finish(req, msg, started, first);
     } catch (e) {

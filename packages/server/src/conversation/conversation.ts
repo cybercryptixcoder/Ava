@@ -7,6 +7,19 @@ import { lifeModelText } from "../planner/context";
 import { CANVAS_PROTOCOL } from "./protocol";
 import { DirectiveParser, type Directive } from "./directives";
 import { enforceAffirmationBudget, splitSentences } from "./affirmation";
+
+/**
+ * The stored raw reply keeps Ava's canvas directives, which sit between the
+ * spoken sentences. When the affirmation budget trims sentences from the
+ * words, remove the same sentences from the raw text rather than replacing
+ * the whole span (which would fail whenever a directive is interleaved).
+ */
+export function dropTrimmedSentences(raw: string, before: string, after: string): string {
+  const kept = new Set(splitSentences(after));
+  let out = raw;
+  for (const s of splitSentences(before)) if (!kept.has(s)) out = out.replace(s, "");
+  return out.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
 import { extract } from "./extraction";
 import { z } from "zod";
 
@@ -361,7 +374,7 @@ export class Conversation {
     const finalWords = check.text;
     const display = parseScript(finalWords).text.trim();
     if (finalWords !== words) sink({ type: "replace_text", text: display });
-    const avaTurn = this.saveTurn({ convId, role: "ava", mode: "async", text: display, raw: raw.replace(words, finalWords), affirmation: check.affirmation, trimmed: check.trimmed });
+    const avaTurn = this.saveTurn({ convId, role: "ava", mode: "async", text: display, raw: finalWords === words ? raw : dropTrimmedSentences(raw, words, finalWords), affirmation: check.affirmation, trimmed: check.trimmed });
     turnRef.id = avaTurn.id;
     sink({ type: "done", turn: avaTurn });
     sink({ type: "status", state: "idle" });
