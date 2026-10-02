@@ -12,6 +12,8 @@ export const ChangeSchema = z.discriminatedUnion("op", [
     item: ItemDraftSchema,
     /** Title of an existing or co-proposed project to link to. */
     project_title: z.string().optional(),
+    /** The thread it belongs in, by title; an existing thread is reused, otherwise Ava files it. */
+    thread_title: z.string().max(80).optional(),
   }),
   z.object({ op: z.literal("update_item"), item_id: z.string(), patch: ItemPatchSchema }),
   z.object({ op: z.literal("set_status"), item_id: z.string(), status: z.string() }),
@@ -41,6 +43,16 @@ export const ChangeSchema = z.discriminatedUnion("op", [
     status: z.enum(["active", "retired"]).optional(),
   }),
   z.object({ op: z.literal("answer_question"), question_id: z.string(), answer: z.string() }),
+  /** Threads: he can rename, merge or split them by saying so. A split is a move into a new thread. */
+  z.object({ op: z.literal("rename_thread"), thread_id: z.string(), title: z.string().min(1).max(80) }),
+  z.object({ op: z.literal("merge_threads"), thread_ids: z.array(z.string()).min(1), into_thread_id: z.string() }),
+  z.object({
+    op: z.literal("move_to_thread"),
+    item_ids: z.array(z.string()).min(1),
+    thread_id: z.string().optional(),
+    /** A new thread's title (a split), used when thread_id is absent. */
+    thread_title: z.string().min(1).max(80).optional(),
+  }),
 ]);
 export type Change = z.infer<typeof ChangeSchema>;
 
@@ -51,7 +63,8 @@ export const ProposalSchema = z.object({
   change: ChangeSchema,
   summary: z.string(),
   reason: z.string().nullable(),
-  status: z.enum(["pending", "accepted", "rejected", "superseded"]),
+  /** "undone": filed automatically, then undone by him. */
+  status: z.enum(["pending", "accepted", "rejected", "superseded", "undone"]),
   weight: z.number().nullable(),
   evidence_id: z.string().nullable(),
   created_at: z.string(),

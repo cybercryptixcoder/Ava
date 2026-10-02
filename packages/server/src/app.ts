@@ -14,6 +14,9 @@ import { BeliefStore } from "./state/beliefs";
 import { ProposalStore } from "./state/proposals";
 import { QuestionStore } from "./state/questions";
 import { Rhythms } from "./state/rhythms";
+import { ThreadStore } from "./state/threads";
+import { Filing } from "./state/filing";
+import { CardStore } from "./cards/cards";
 import { ModelGateway } from "./models/gateway";
 import { AnthropicProvider } from "./models/anthropic";
 import type { ModelProvider } from "./models/types";
@@ -80,7 +83,10 @@ export function buildApp(opts: BuildOptions = {}): App {
   svc.items = new ItemStore(db, clock);
   svc.evidence = new EvidenceStore(db, clock, cipher);
   svc.beliefs = new BeliefStore(db, clock, () => settings.get().beliefs.half_life_days);
-  svc.proposals = new ProposalStore(db, clock, svc.items, svc.beliefs, svc.evidence, log);
+  svc.threads = new ThreadStore(db, clock, svc.items, settings, log);
+  svc.proposals = new ProposalStore(db, clock, svc.items, svc.beliefs, svc.evidence, log, svc.threads);
+  svc.filing = new Filing(svc);
+  svc.cards = new CardStore(svc);
   svc.questions = new QuestionStore(svc);
   svc.rhythms = new Rhythms(svc);
   const provider = opts.provider !== undefined ? opts.provider : cfg.anthropicKey ? new AnthropicProvider(cfg.anthropicKey, cfg.refusalFallback) : null;
@@ -121,6 +127,11 @@ export function buildApp(opts: BuildOptions = {}): App {
   // genuinely new projects trigger a planning session; any change is an event wake.
   svc.items.onChange((c) => {
     const it = c.item;
+    // Every task, deadline, commitment and open loop lives in a thread.
+    if (c.kind === "created" && !it.thread_id && svc.threads.threadable(it)) {
+      svc.threads.place(it);
+      svc.threads.enforceCap();
+    }
     if (["task", "commitment"].includes(it.type) && (c.kind === "created" || c.before?.due_at !== it.due_at || c.kind === "completed" || c.kind === "status")) {
       svc.scheduler.syncDeadlineWakes(it);
     }
@@ -128,12 +139,13 @@ export function buildApp(opts: BuildOptions = {}): App {
       const n = svc.scheduler.cancelForItem(it.id, `${it.title} is ${c.kind === "deleted" ? "removed" : "done"}`);
       if (n) log.info("schedule.item_closed", `${it.title} closed: cancelled ${n} related wake${n === 1 ? "" : "s"}`);
       svc.proposals.supersedePendingFor(it.id);
+      svc.cards.closeForItem(it.id);
     }
     if (c.kind === "completed" || c.kind === "status") svc.messages.markActedFromItem(it.id);
     if (c.kind === "created" && it.type === "project" && !c.via.startsWith("chip:chat_import") && c.via !== "seed") {
       svc.planner.requestNewContext(`a new project, "${it.title}"`);
     }
-    if (!["gcal", "rhythms", "seed"].includes(c.via) && !c.via.startsWith("ics:") && it.type !== "event") {
+    if (!["gcal", "rhythms", "seed", "undo"].includes(c.via) && !c.via.startsWith("ics:") && it.type !== "event") {
       svc.scheduler.event(`${it.title}: ${c.kind}`, [it.id]);
     }
     bus.emit({ type: "state.changed", what: ["items"] });
@@ -159,6 +171,7 @@ export function buildApp(opts: BuildOptions = {}): App {
     start() {
       svc.scheduler.ensureSystemWakes();
       for (const it of svc.items.list({ open: true, types: ["task", "commitment"] })) if (it.due_at) svc.scheduler.syncDeadlineWakes(it);
+      svc.threads.backfill();
       svc.scheduler.start();
       deadman.start();
       runRetention(svc);

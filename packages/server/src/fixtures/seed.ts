@@ -24,7 +24,7 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
     const [h, m] = hm.split(":").map(Number);
     return anchorDay.plus({ days: d }).set({ hour: h, minute: m }).toUTC().toISO()!;
   };
-  const { items, db, beliefs, rules, settings, evidence, proposals } = svc;
+  const { items, db, beliefs, rules, settings, evidence } = svc;
   settings.update({ current_location_id: "state-college", first_run_complete: true, voice: { ...settings.get().voice, vocabulary: ["CMPSC 465", "CMPSC 473", "MATH 486", "Riya", "Prof. Lee", "Dijkstra", "Bellman-Ford", "I-20", "SOP"] } }, new Date(at(-60, "12:00")));
 
   // ------------------------------------------------------------ calendar: courses for three weeks around D
@@ -296,60 +296,45 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
   for (const it of items.list({ open: true, types: ["task", "commitment"] })) if (it.due_at) svc.scheduler.syncDeadlineWakes(it);
   await svc.scheduler.advanceTo(new Date(at(0, "11:52")));
 
-  // ------------------------------------------------------------ the conversation on the canvas
+  // ------------------------------------------------------------ the brain dump, filed through the same path as a real one
   clock.set(at(0, "11:40"));
   const conv = svc.canvas.current(true);
   const userTurn = svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: BRAIN_DUMP, input_kind: "dictated" });
   const ev = evidence.add({ kind: "transcript", source: "voice", content: BRAIN_DUMP, summary: BRAIN_DUMP.slice(0, 200), source_ref: userTurn.id });
-  const batch = proposals.createBatch("conversation", [
-    { change: { op: "set_status", item_id: ids.get("riya")!, status: "open" }, summary: "Keep \"Send Riya the robotics club slides\" open (you haven't sent them)", reason: "I told Riya I'd send her the robotics slides yesterday and I completely forgot", evidence_id: ev },
-    { change: { op: "update_item", item_id: ids.get("os2")!, patch: { data: { notes: "Parser working" } } }, summary: "OS Project 2: note that the parser works", reason: "I got the parser working", evidence_id: ev },
-    {
-      change: { op: "add_belief", belief: { area: "study", statement: "Re-reading slides doesn't help you prepare; practice problems do.", provenance: "stated", confidence: 0.9 } },
-      summary: "Note: re-reading slides doesn't help you; problems do",
-      reason: "I end up re-reading the slides which doesn't help",
-      evidence_id: ev,
-    },
-    {
-      change: { op: "create_item", item: { type: "commitment", title: "Get the I-20 signed before winter break (office open weekdays until 4)", due_at: at(9, "16:00"), data: { kind: "errand" } } },
-      summary: "New: get the I-20 signed, office open weekdays until 4",
-      reason: "I need to get the I-20 signed before winter break, the office is only open weekdays till four",
-      evidence_id: ev,
-    },
-  ]);
-  svc.canvas.show(conv, { key: "chips", type: "confirmation_chips", batch_id: batch.batch_id, title: "From what you said" }, "seed");
-  clock.set(at(0, "11:41"));
-  svc.canvas.show(conv, { key: "plan", type: "day_timeline", title: "Today", highlight_item_ids: [ids.get("sop")!, ids.get("quiz4")!] }, "seed");
-  svc.canvas.show(conv, { key: "deadlines", type: "deadline_horizon", title: "Due in the next two weeks", days: 14 }, "seed");
-  svc.canvas.show(
-    conv,
-    {
-      key: "opts",
-      type: "options",
-      title: "Start the quiz prep",
-      prompt: "Pick one; I'll start it now.",
-      recommended: "a",
-      options: [
-        { key: "a", label: "Practice set, easy to hard", detail: "Twelve problems on Dijkstra, Bellman-Ford and MSTs, answers hidden", action: { kind: "start_executor", executor: "practice_set", item_id: ids.get("quiz4")!, instructions: "Practice set on shortest paths and MSTs" } },
-        { key: "b", label: "Three problems right after lecture", detail: "A 30-minute start while the material is fresh", action: { kind: "start_executor", executor: "plan", item_id: ids.get("quiz4")!, instructions: "30-minute plan: three problems" } },
-        { key: "c", label: "Remind me tonight", detail: "In the 9 pm study window", action: { kind: "snooze_item", item_id: ids.get("quiz4")!, hours: 9 } },
-      ],
-    },
-    "seed",
+  svc.filing.file(
+    [
+      { change: { op: "update_item", item_id: ids.get("os2")!, patch: { data: { notes: "Parser working" } } }, summary: "OS Project 2: the parser works", reason: "I got the parser working", stated: true },
+      {
+        change: { op: "create_item", item: { type: "task", title: "Write tests for job control", parent_id: ids.get("os2")! } },
+        summary: "New step for OS Project 2: tests for job control",
+        reason: "OS project two is going okay, I got the parser working",
+        stated: true,
+      },
+      {
+        change: { op: "add_belief", belief: { area: "study", statement: "Re-reading slides doesn't help you prepare; practice problems do.", provenance: "stated", confidence: 0.9 } },
+        summary: "Noted: re-reading slides doesn't help; problems do",
+        reason: "I end up re-reading the slides which doesn't help",
+        stated: true,
+      },
+      {
+        change: { op: "create_item", item: { type: "commitment", title: "Get the I-20 signed before winter break (office open weekdays until 4)", due_at: at(9, "16:00"), data: { kind: "errand" } } },
+        summary: "Get the I-20 signed before winter break",
+        reason: "I need to get the I-20 signed before winter break, the office is only open weekdays till four",
+        stated: true,
+      },
+    ],
+    { origin: "conversation", evidence_id: ev },
   );
-  const raw = `${AVA_REPLY}\n<show>{"key":"plan","type":"day_timeline"}</show>`;
-  svc.conversation.saveTurn({ convId: conv, role: "ava", mode: "async", text: AVA_REPLY.replace(/\[\[[^\]]+\]\]/g, "").replace(/ {2,}/g, " "), raw });
+  svc.conversation.saveTurn({ convId: conv, role: "ava", mode: "async", text: AVA_REPLY });
   clock.set(at(0, "11:47"));
   svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: "do the practice set", input_kind: "dictated" });
-  svc.canvas.show(conv, { key: "practice", type: "artifact_preview", artifact_id: practiceId, title: "Quiz 4 practice set" }, "seed");
+  svc.cards.forArtifact(practiceId, "Quiz 4 practice set", "Twelve problems on shortest paths and MSTs, easiest first, answers hidden.", ids.get("quiz4")!);
   svc.conversation.saveTurn({
     convId: conv,
     role: "ava",
     mode: "async",
     text: "It's up. Twelve problems, easiest first; answers stay hidden until you open them. The Bellman-Ford pair is where quizzes like this usually bite.",
   });
-  svc.canvas.event(conv, "choose_option", "opts", { option: "a", label: "Practice set, easy to hard" });
-  db.run("UPDATE canvas_events SET consumed = 1");
 
   clock.set(at(0, "11:52"));
   db.run("INSERT INTO settings (key, value, updated_at) VALUES ('sim.clock', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [clock.now().toISOString(), new Date().toISOString()]);

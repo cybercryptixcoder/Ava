@@ -47,7 +47,7 @@ self.addEventListener("push", (event) => {
   const options = {
     body: data.body || "",
     tag: data.tag || undefined,
-    data: { url: data.url || "/today", message_id: data.message_id || null },
+    data: { url: data.url || "/", card_id: data.card_id || null },
     icon: "/icon-192.png",
     badge: "/icon-192.png",
     renotify: false,
@@ -58,7 +58,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   const n = event.notification;
-  const { url, message_id } = n.data || {};
+  const { url, card_id } = n.data || {};
   n.close();
   const open = async (target) => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -71,9 +71,9 @@ self.addEventListener("notificationclick", (event) => {
     }
     await self.clients.openWindow(target);
   };
-  if (message_id && (event.action === "do_it" || event.action === "already_done")) {
+  if (card_id && (event.action === "yes" || event.action === "not_now")) {
     event.waitUntil(
-      fetch(`/api/messages/${message_id}/respond`, {
+      fetch(`/api/cards/${card_id}/respond`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },

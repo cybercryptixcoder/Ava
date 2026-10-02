@@ -42,6 +42,10 @@ export function lifeModelText(svc: Services, opts: { calendarDays?: number; incl
   sections.push(`Projects:\n${items.list({ types: ["project"] }).filter((p) => p.status !== "dropped").map((i) => itemLine(svc, i) + ` | last touched ${Math.floor((now.getTime() - new Date(i.touched_at).getTime()) / 86_400_000)}d ago`).join("\n") || "- none"}`);
   sections.push(`Commitments and open loops:\n${[...by("commitment"), ...by("open_loop")].map((i) => itemLine(svc, i)).join("\n") || "- none"}`);
   sections.push(`Goals:\n${by("goal").map((i) => itemLine(svc, i)).join("\n") || "- none"}`);
+  const threadLine = (t: { id: string; title: string }, indent: string) => `${indent}- ${t.title} (${t.id}): ${items.list({ thread_id: t.id, open: true }).map((i) => i.id).join(", ") || "nothing open"}`;
+  const top = svc.threads.activeTopLevel();
+  const kids = (id: string) => svc.threads.list().filter((t) => t.parent_id === id);
+  sections.push(`Threads (top level, then grouped under it; item ids):\n${top.map((t) => [threadLine(t, ""), ...kids(t.id).map((k) => threadLine(k, "  "))].join("\n")).join("\n") || "- none"}`);
   if (opts.includeBeliefs !== false) {
     const bs = beliefs.list({ status: ["active", "proposed"] });
     sections.push(

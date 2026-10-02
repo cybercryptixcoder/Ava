@@ -12,6 +12,7 @@ import { registerCoreRoutes } from "./routes-core";
 import { registerDevRoutes } from "./routes-dev";
 import { registerSourceRoutes } from "./routes-sources";
 import { registerTalkRoutes } from "./routes-talk";
+import { registerStackRoutes } from "./routes-stack";
 
 export async function buildServer(svc: Services, opts: { logger?: boolean; serveWeb?: boolean } = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 32 * 1024 * 1024, trustProxy: true });
@@ -31,6 +32,7 @@ export async function buildServer(svc: Services, opts: { logger?: boolean; serve
   registerAuth(app, svc);
   registerCoreRoutes(app, svc);
   registerTalkRoutes(app, svc);
+  registerStackRoutes(app, svc);
   registerSourceRoutes(app, svc);
   registerDevRoutes(app, svc);
 

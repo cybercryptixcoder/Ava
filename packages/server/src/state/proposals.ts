@@ -6,6 +6,7 @@ import type { ItemStore } from "./items";
 import type { BeliefStore } from "./beliefs";
 import type { EvidenceStore } from "./evidence";
 import type { DecisionLog } from "../core/log";
+import type { ThreadStore } from "./threads";
 
 export interface QuestionAnswerHandler {
   (questionId: string, answer: string): void;
@@ -41,6 +42,7 @@ export class ProposalStore {
     private beliefs: BeliefStore,
     private evidence: EvidenceStore,
     private log: DecisionLog,
+    private threads: ThreadStore,
   ) {}
 
   /** Human-readable chip text for a change. */
@@ -65,6 +67,12 @@ export class ProposalStore {
         return `Revise belief ${c.belief_id}`;
       case "answer_question":
         return `Answer: ${c.answer}`;
+      case "rename_thread":
+        return `Rename "${this.threads.get(c.thread_id)?.title ?? "a thread"}" to "${c.title}"`;
+      case "merge_threads":
+        return `Fold ${c.thread_ids.map((id) => `"${this.threads.get(id)?.title ?? "a thread"}"`).join(", ")} into "${this.threads.get(c.into_thread_id)?.title ?? "a thread"}"`;
+      case "move_to_thread":
+        return `Move ${c.item_ids.length === 1 ? (this.items.get(c.item_ids[0])?.title ?? "an item") : `${c.item_ids.length} items`} to "${c.thread_id ? (this.threads.get(c.thread_id)?.title ?? "a thread") : c.thread_title}"`;
     }
   }
 
@@ -160,7 +168,11 @@ export class ProposalStore {
           const existing = this.items.list({ types: ["project"], q: change.project_title }).find((p) => p.title.toLowerCase() === change.project_title!.toLowerCase());
           project_id = existing?.id ?? null;
         }
-        const item = this.items.create({ ...change.item, project_id }, { source: via.startsWith("chip:") ? via.slice(5) : via, via });
+        const draft = { ...change.item, project_id };
+        // File it under its thread before creation, so the item is never threadless.
+        const thread_id = draft.thread_id ?? (this.threads.threadable(draft) ? this.threads.resolve(draft, change.thread_title) : null);
+        const item = this.items.create({ ...draft, thread_id }, { source: via.startsWith("chip:") ? via.slice(5) : via, via });
+        if (thread_id) this.threads.enforceCap();
         if (proposal?.evidence_id) this.evidence.linkItem(item.id, proposal.evidence_id);
         return item;
       }
@@ -184,7 +196,28 @@ export class ProposalStore {
       case "answer_question":
         this.answerQuestion(change.question_id, change.answer);
         return null;
+      case "rename_thread":
+        return this.threads.rename(change.thread_id, change.title, via);
+      case "merge_threads":
+        return this.threads.merge(change.thread_ids, change.into_thread_id, via);
+      case "move_to_thread":
+        return this.threads.move(change.item_ids, { thread_id: change.thread_id, title: change.thread_title }, via);
     }
+  }
+
+  /** Record that a proposal was filed automatically, with what undoing it takes. */
+  markAuto(id: string, undo: unknown): void {
+    this.db.run("UPDATE proposals SET auto = 1, undo = ? WHERE id = ?", [js(undo), id]);
+  }
+
+  undoOf<T>(id: string): { auto: boolean; undo: T | null } {
+    const r = this.db.get<{ auto: number; undo: string | null }>("SELECT auto, undo FROM proposals WHERE id = ?", [id]);
+    return { auto: !!r?.auto, undo: j<T | null>(r?.undo, null) };
+  }
+
+  markUndone(id: string): Proposal {
+    this.db.run("UPDATE proposals SET status = 'undone', resolved_at = ? WHERE id = ?", [this.clock.now().toISOString(), id]);
+    return this.get(id)!;
   }
 
   supersedePendingFor(itemId: string): void {

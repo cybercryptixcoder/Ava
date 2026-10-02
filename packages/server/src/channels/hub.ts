@@ -1,6 +1,4 @@
 import webpush from "web-push";
-import type { MessageView } from "@ava/shared";
-import { RESPONSE_LABELS } from "@ava/shared";
 import type { Services } from "../core/services";
 import { newId } from "../db/db";
 
@@ -9,7 +7,7 @@ export interface PushPayload {
   body: string;
   tag: string;
   url: string;
-  message_id?: string;
+  card_id?: string;
   actions?: { action: string; title: string }[];
   silent?: boolean;
 }
@@ -107,19 +105,23 @@ export class ChannelHub {
     }
   }
 
-  async deliver(m: MessageView): Promise<void> {
-    await this.broadcast({
-      title: m.headline,
-      body: m.because,
-      tag: m.id,
-      url: `/messages?focus=${m.id}`,
-      message_id: m.id,
-      // Browsers show at most two actions; the app shows all four responses and every option.
-      actions: [
-        { action: "do_it", title: RESPONSE_LABELS.do_it },
-        { action: "already_done", title: RESPONSE_LABELS.already_done },
-      ],
-    }, m.wake_id);
+  /** A time-sensitive card: just its one line, with "yes" and "not now" where the platform shows actions. */
+  async pushCard(c: { card_id: string; title: string; yes: string }, wakeId: string | null = null): Promise<void> {
+    await this.broadcast(
+      {
+        title: c.title,
+        body: "",
+        tag: c.card_id,
+        url: `/?card=${c.card_id}`,
+        card_id: c.card_id,
+        // Browsers show at most two actions; long-press and voice reach the rest in the app.
+        actions: [
+          { action: "yes", title: c.yes.length > 24 ? "Yes" : c.yes },
+          { action: "not_now", title: "Not now" },
+        ],
+      },
+      wakeId,
+    );
   }
 
   async notify(title: string, body: string, url: string, tag: string, wakeId: string | null = null): Promise<void> {

@@ -81,3 +81,9 @@ What the screenshot review changed: the brief's idle indicator read as a loading
 4. Add a second channel (Telegram or SMS) behind the existing channel interface for when the phone browser isn't installed.
 5. Offline queueing of check-offs and chip decisions in the service worker.
 6. Encrypted off-site backups of the data folder on a schedule.
+
+## Status at pause (stack model, in progress)
+
+Done and pushed: CI workflow (`.github/workflows/ci.yml`), `CLAUDE.md`, `AGENTS.md`, PR template, `BACKLOG.md`, and the server side of the card stack: threads (`state/threads.ts`), auto-filing with per-item undo (`state/filing.ts`), cards and the stack (`cards/cards.ts`, `GET /api/stack`, `/api/cards/:id/layer/2|3`, `POST /api/cards/:id/respond`, `POST /api/filings/:id/undo`, `/api/threads`), the morning stack replacing the written brief, push limited to time-sensitive cards (2 a day), rule approvals and inferences as occasional Pick cards. Tests: `packages/server/test/stack.test.ts` plus the updated end-to-end brain-dump test.
+
+Not done yet: Part 4, the new main page (card stack UI, gestures, input bar, Calendar and Everything views, back-room menu). The web app still shows the old eight-screen interface; it builds and works against the new server, but proactive messages now live as cards, which only the API exposes so far. Also not yet updated: `docs/architecture.md` for the stack model.

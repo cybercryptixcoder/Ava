@@ -272,7 +272,8 @@ export class LiveSession {
           this.convId,
           d,
           (ev) => {
-            if (ev.type === "module" || ev.type === "chips") this.out({ type: ev.type, module: ev.module });
+            if (ev.type === "module") this.out({ type: ev.type, module: ev.module });
+            else if (ev.type === "filed") this.out({ type: "filed", filed: ev.filed, needs_you: ev.needs_you });
             else if (ev.type === "remove") this.out({ type: "remove", key: ev.key });
             else if (ev.type === "module_error") this.out({ type: "module_error", errors: ev.errors });
           },
@@ -287,7 +288,7 @@ export class LiveSession {
         {
           role: "user",
           content: `${conversation.contextBlock(this.convId, text, true, [
-            "Live mode: a real-time spoken conversation, like a call. Keep it conversational and brief unless he's riffing. Start with the point. No fillers ('um', 'let me think', 'great question'). If you put something on screen, say so in a few words.",
+            "Live mode: a real-time spoken conversation, like a call. Keep it conversational and brief unless he's riffing. Start with the point. No fillers ('um', 'let me think', 'great question'). What he tells you is filed into his stack; don't describe it back.",
           ])}\n\n${text}`,
         },
       ];
@@ -351,9 +352,8 @@ export class LiveSession {
     try {
       const changes = await extract(this.svc, text, { purpose: "live.extract", origin: "interactive" });
       if (!changes.length) return;
-      const batch = this.svc.proposals.createBatch("conversation", changes);
-      const m = this.svc.canvas.show(this.convId, { key: `chips-${batch.batch_id.slice(-5)}`, type: "confirmation_chips", batch_id: batch.batch_id, title: "From what you said" }, "live");
-      if (m.ok) this.out({ type: "chips", module: m.module });
+      const f = this.svc.filing.file(changes, { origin: "conversation", evidence_id: null });
+      this.out({ type: "filed", filed: f.filed.length, needs_you: f.needs_you.length });
     } catch (e) {
       this.svc.log.warn("extraction.failed", `Live extraction failed: ${(e as Error).message}`);
     }

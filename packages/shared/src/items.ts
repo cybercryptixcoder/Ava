@@ -212,6 +212,10 @@ export const ItemSchema = z.object({
   start_at: z.string().nullable(),
   end_at: z.string().nullable(),
   project_id: z.string().nullable(),
+  /** The thread (top-level area of his life right now) Ava filed it under. */
+  thread_id: z.string().nullable(),
+  /** For subtasks: the task it belongs to. */
+  parent_id: z.string().nullable(),
   importance: z.number().int().min(0).max(3).nullable(),
   tags: z.array(z.string()),
   source: z.string(),
@@ -234,6 +238,8 @@ export const ItemDraftSchema = z.object({
   start_at: z.string().nullable().optional(),
   end_at: z.string().nullable().optional(),
   project_id: z.string().nullable().optional(),
+  thread_id: z.string().nullable().optional(),
+  parent_id: z.string().nullable().optional(),
   importance: z.number().int().min(0).max(3).nullable().optional(),
   tags: z.array(z.string()).optional(),
 });

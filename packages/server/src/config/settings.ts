@@ -57,6 +57,24 @@ export const SettingsSchema = z.object({
     less_of_this_cooldown_days: z.number().min(0.5),
     shadow_days: z.number().int().min(1).max(14),
   }),
+  stack: z.object({
+    /** How many cards the stack shows at once on a normal day. */
+    max_cards: z.number().int().min(1).max(12),
+    /** "Not now" brings a card back no sooner than this. */
+    min_return_minutes: z.number().int().min(15),
+    /** Rule approvals that can message him surface as a card at most this often. */
+    rule_card_every_days: z.number().min(1),
+    /** Unconfirmed inferences surface as a card at most this often. */
+    belief_card_every_days: z.number().min(1),
+  }),
+  threads: z.object({
+    /** Top-level threads before Ava groups further. */
+    max_active: z.number().int().min(2).max(20),
+  }),
+  notifications: z.object({
+    /** Push notifications for time-sensitive cards per day. Everything else waits in the stack. */
+    push_per_day: z.number().int().min(0).max(10),
+  }),
   approval: z.object({
     /** Rules that only wake or prepare work silently auto-approve within budget. */
     auto_approve_internal: z.boolean(),
@@ -136,6 +154,9 @@ export function defaultSettings(envDefaults: {
       less_of_this_cooldown_days: 3,
       shadow_days: 3,
     },
+    stack: { max_cards: 5, min_return_minutes: 180, rule_card_every_days: 7, belief_card_every_days: 4 },
+    threads: { max_active: 7 },
+    notifications: { push_per_day: 2 },
     approval: { auto_approve_internal: true },
     conversation: { affirmation_window: 10, affirmation_max: 1, affirmation_model_check: true },
     voice: {

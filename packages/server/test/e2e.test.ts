@@ -7,45 +7,69 @@ const NY = "America/New_York";
 let t: TestApp;
 afterEach(() => t?.close());
 
-const blank = { item_id: null, item_type: null, title: null, status: null, due_local: null, start_local: null, end_local: null, project_title: null, importance: null, tags: [], kind: null, course: null, estimate_minutes: null, to_person: null, next_step: null, notes: null, belief_area: null, belief_statement: null, belief_provenance: null, belief_confidence: null };
+const blank = { stated: true, thread: null, parent_item_id: null, thread_id: null, other_thread_ids: [], item_ids: [], new_title: null, item_id: null, item_type: null, title: null, status: null, due_local: null, start_local: null, end_local: null, project_title: null, importance: null, tags: [], kind: null, course: null, estimate_minutes: null, to_person: null, next_step: null, notes: null, belief_area: null, belief_statement: null, belief_provenance: null, belief_confidence: null };
 
-describe("brain dump to confirmed items", () => {
-  it("extracts chips, shows a canvas module, and applies accepted changes", async () => {
+describe("brain dump to filed items", () => {
+  it("files what he stated, asks about the rest as cards, and undoes per item", async () => {
     let psId = "";
     const provider = new ScriptedProvider({
       "conversation.extract": () => ({
         changes: [
-          { ...blank, op: "create_item", summary: "New quiz: CMPSC 465 Quiz 4, Thu 10:10", quote: "quiz 4 is thursday at ten ten", item_type: "task", title: "CMPSC 465 Quiz 4", due_local: "2026-10-08T10:10", kind: "quiz", course: "CMPSC 465" },
+          { ...blank, op: "create_item", summary: "New quiz: CMPSC 465 Quiz 4, Thu 10:10", quote: "quiz 4 is thursday at ten ten", item_type: "task", title: "CMPSC 465 Quiz 4", due_local: "2026-10-08T10:10", kind: "quiz", course: "CMPSC 465", thread: "Midterm week" },
           { ...blank, op: "complete_item", summary: "Problem set 5 is done", quote: "I finished the problem set", item_id: psId },
           { ...blank, op: "add_belief", summary: "Practice problems work better than re-reading", quote: "re-reading slides doesn't help", belief_area: "study", belief_statement: "Practice problems work better for you than re-reading slides.", belief_provenance: "stated", belief_confidence: 0.8 },
+          { ...blank, op: "create_item", summary: "Promise to Riya: send the robotics slides", quote: "I told Riya I'd send the slides", item_type: "commitment", title: "Send Riya the robotics slides", to_person: "Riya" },
+          { ...blank, op: "create_item", summary: "Reading for MATH 486 by Friday", quote: "should probably do the reading before Friday's class", item_type: "task", title: "MATH 486 reading", due_local: "2026-10-09T09:00", stated: false },
+          { ...blank, op: "add_belief", summary: "Mornings are hard for deep work", quote: "I never get anything done before ten", belief_area: "routines", belief_statement: "Mornings before ten don't work for deep work.", belief_provenance: "inferred", belief_confidence: 0.5, stated: false },
         ],
       }),
-      "conversation.reply": `Noted. Problems first for the quiz. [[tonight]] <show>{"key":"tonight","type":"note","title":"Tonight","body":"Twelve problems, easiest first."}</show>`,
+      "conversation.reply": "Filed. Two things need you; they're on top.",
       "affirmation.check": { praise_sentence_indices: [] },
     });
     t = makeApp({ at: atLocal("2026-10-05", "20:00", NY).toISOString(), provider });
     psId = addItem(t.svc, { type: "task", title: "MATH 486 Problem Set 5", due_at: atLocal("2026-10-06", "23:59", NY).toISOString() }).id;
 
     const events: TalkEvent[] = [];
-    await t.svc.conversation.send({ text: "ok so quiz 4 is thursday at ten ten, I finished the problem set, and honestly re-reading slides doesn't help", input_kind: "dictated", speak: false }, (e) => events.push(e));
+    await t.svc.conversation.send({ text: "ok so quiz 4 is thursday at ten ten, I finished the problem set, re-reading slides doesn't help, I told Riya I'd send the slides, and the reading before Friday", input_kind: "dictated", speak: false }, (e) => events.push(e));
 
-    const chips = events.find((e) => e.type === "chips") as Extract<TalkEvent, { type: "chips" }>;
-    expect(chips.module.data.type).toBe("confirmation_chips");
-    expect(events.some((e) => e.type === "module" && e.module.key === "tonight")).toBe(true);
-    const done = events.find((e) => e.type === "done") as Extract<TalkEvent, { type: "done" }>;
-    expect(done.turn.text).toBe("Noted. Problems first for the quiz.");
+    expect(events.find((e) => e.type === "filed")).toEqual({ type: "filed", filed: 3, needs_you: 2 });
+    expect(events.some((e) => e.type === "module")).toBe(false);
+    expect((events.find((e) => e.type === "done") as Extract<TalkEvent, { type: "done" }>).turn.text).toBe("Filed. Two things need you; they're on top.");
 
-    // Nothing changes until he confirms.
-    expect(t.svc.items.list({ open: true }).some((i) => i.title === "CMPSC 465 Quiz 4")).toBe(false);
-    const batchId = (chips.module.data as { batch_id: string }).batch_id;
-    t.svc.proposals.resolveBatch(batchId, "accept");
-
-    const quiz = t.svc.items.list({ open: true }).find((i) => i.title === "CMPSC 465 Quiz 4");
-    expect(quiz?.due_at).toBe(atLocal("2026-10-08", "10:10", NY).toISOString());
+    // Stated things are filed straight away, under a thread, with their deadline wakes.
+    const quiz = t.svc.items.list({ open: true }).find((i) => i.title === "CMPSC 465 Quiz 4")!;
+    expect(quiz.due_at).toBe(atLocal("2026-10-08", "10:10", NY).toISOString());
+    expect(t.svc.threads.get(quiz.thread_id!)?.title).toBe("Midterm week");
+    expect(t.svc.scheduler.pending({ kinds: ["deadline"] }).some((w) => w.item_ids.includes(quiz.id))).toBe(true);
     expect(t.svc.items.get(psId)?.status).toBe("done");
     expect(t.svc.beliefs.list({}).some((b) => b.statement.startsWith("Practice problems"))).toBe(true);
-    // The new deadline gets its system wakes immediately.
-    expect(t.svc.scheduler.pending({ kinds: ["deadline"] }).some((w) => w.item_ids.includes(quiz!.id))).toBe(true);
+    // Another person and an inferred date wait for him; nothing was created for them yet.
+    expect(t.svc.items.list({ open: true }).some((i) => i.title === "Send Riya the robotics slides" || i.title === "MATH 486 reading")).toBe(false);
+
+    // The stack: the filing summary first, then a card for each thing that needs him. The inference is held back.
+    const stack = t.svc.cards.stack();
+    expect(stack.cards[0]).toMatchObject({ kind: "know", title: "Filed 3 things, 2 need you" });
+    const picks = stack.cards.filter((c) => c.kind === "pick");
+    expect(picks.map((c) => c.title).sort()).toEqual(["Promise to Riya: send the robotics slides?", "Reading for MATH 486 by Friday?"]);
+    expect(stack.cards.some((c) => c.title.includes("Mornings"))).toBe(false);
+
+    // Opening the summary shows what was filed, with undo per item.
+    const layer = t.svc.cards.layer2(stack.cards[0].id);
+    expect(layer.filed.filter((f) => f.status === "filed").map((f) => f.summary)).toEqual(expect.arrayContaining(["New quiz: CMPSC 465 Quiz 4, Thu 10:10", "Problem set 5 is done"]));
+    const quizEntry = layer.filed.find((f) => f.summary.startsWith("New quiz"))!;
+    t.svc.filing.undo(quizEntry.proposal_id);
+    expect(t.svc.items.get(quiz.id)).toBeNull();
+    expect(t.svc.scheduler.pending({ kinds: ["deadline"] }).some((w) => w.item_ids.includes(quiz.id))).toBe(false);
+    expect(t.svc.cards.layer2(stack.cards[0].id).filed.find((f) => f.proposal_id === quizEntry.proposal_id)?.status).toBe("undone");
+    const psEntry = layer.filed.find((f) => f.summary === "Problem set 5 is done")!;
+    t.svc.filing.undo(psEntry.proposal_id);
+    expect(t.svc.items.get(psId)?.status).toBe("todo");
+
+    // Saying yes to the Riya card files it, under the people thread.
+    const riya = picks.find((c) => c.title.startsWith("Promise to Riya"))!;
+    await t.svc.cards.respond(riya.id, "yes");
+    const promise = t.svc.items.list({ open: true }).find((i) => i.title === "Send Riya the robotics slides")!;
+    expect(t.svc.threads.get(promise.thread_id!)?.title).toBe("People to get back to");
   });
 
   it("keeps one affirmation within budget and trims the next, also from the stored raw reply", async () => {
@@ -190,6 +214,7 @@ describe("dynamic rule proposal, shadow, approval", () => {
         question: null,
         belief_proposals: [],
         brief_notes: null,
+        threads: [],
       },
     });
     t = makeApp({ at: atLocal("2026-10-01", "20:00", NY).toISOString(), provider });

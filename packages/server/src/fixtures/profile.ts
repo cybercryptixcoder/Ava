@@ -101,8 +101,4 @@ export const DRAFT_TO_LEE = {
 
 export const BRAIN_DUMP = `okay so a lot is going on. the 465 quiz is thursday and I haven't really started, it's shortest paths and MSTs, I keep telling myself I'll do practice problems but then I end up re-reading the slides which doesn't help. also I told Riya I'd send her the robotics slides yesterday and I completely forgot. the SOP is basically done, it's been sitting there drafted for days, I just need to do the final read but I keep not doing it. OS project two is going okay, I got the parser working. and honestly I'm not sure the line follower thing is worth my time this semester, maybe I should hand it off. oh and I need to get the I-20 signed before winter break, the office is only open weekdays till four`;
 
-export const AVA_REPLY = `The thread worth pulling is the SOP: it's done except for the last read, and that read is maybe forty minutes. [[plan]]I've put tonight's plan up; the read-through sits at nine thirty, inside the window where you usually do your best work.
-
-[[deadlines]]For the quiz, skip the slides. You already know re-reading doesn't stick for you, so I'd go straight to problems. [[opts]]Three ways to start are on screen; I'd take the first.
-
-On the line follower: that's worth deciding rather than letting it drift. If you hand it off, the slides to Riya become the handoff note, which closes two loops at once.`;
+export const AVA_REPLY = `Filed three things; the I-20 one needs you, it's on top. The SOP is one read from done, so that's tonight. For the quiz, go straight to problems; the practice set is ready.`;

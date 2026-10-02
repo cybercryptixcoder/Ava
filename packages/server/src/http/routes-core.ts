@@ -187,7 +187,10 @@ export function registerCoreRoutes(app: FastifyInstance, svc: Services): void {
   app.get<{ Params: { id: string } }>("/api/messages/:id", async (req, reply) => svc.messages.get(req.params.id) ?? reply.code(404).send({ error: "No such message" }));
   app.post<{ Params: { id: string }; Body: { response: string; option?: string } }>("/api/messages/:id/respond", async (req) => {
     const response = ResponseKindSchema.parse(req.body.response);
-    return svc.responder.respond(req.params.id, response, req.body.option ?? null);
+    const r = await svc.responder.respond(req.params.id, response, req.body.option ?? null);
+    // Answered from the history screen: its card has done its job.
+    if (response !== "not_now") svc.cards.closeRef("message", req.params.id);
+    return r;
   });
 
   // ------------------------------------------------------------------ wakes
@@ -266,8 +269,16 @@ export function registerCoreRoutes(app: FastifyInstance, svc: Services): void {
   });
   app.get("/api/actions", async () => svc.actions.list());
   app.patch<{ Params: { id: string }; Body: { to: string; subject: string; body: string } }>("/api/actions/:id", async (req) => svc.actions.edit(req.params.id, req.body));
-  app.post<{ Params: { id: string }; Body: { to: string; subject: string; body: string } }>("/api/actions/:id/confirm", async (req) => svc.actions.confirm(req.params.id, req.body));
-  app.post<{ Params: { id: string } }>("/api/actions/:id/cancel", async (req) => svc.actions.cancel(req.params.id));
+  app.post<{ Params: { id: string }; Body: { to: string; subject: string; body: string } }>("/api/actions/:id/confirm", async (req) => {
+    const r = await svc.actions.confirm(req.params.id, req.body);
+    if (r.status !== "pending") svc.cards.closeRef("action", req.params.id);
+    return r;
+  });
+  app.post<{ Params: { id: string } }>("/api/actions/:id/cancel", async (req) => {
+    const r = svc.actions.cancel(req.params.id);
+    svc.cards.closeRef("action", req.params.id);
+    return r;
+  });
 
   // ------------------------------------------------------------------ brief and setup
   app.get<{ Querystring: { id?: string } }>("/api/brief", async (req) => svc.brief.view(req.query.id) ?? null);

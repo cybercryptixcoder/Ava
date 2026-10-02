@@ -4,7 +4,7 @@ import { ChangeSchema, parseScript, type Change, type HydratedModule, type TurnV
 import type { Services } from "../core/services";
 import { j, js, newId } from "../db/db";
 import { lifeModelText } from "../planner/context";
-import { CANVAS_PROTOCOL } from "./protocol";
+import { STACK_PROTOCOL } from "./protocol";
 import { DirectiveParser, type Directive } from "./directives";
 import { enforceAffirmationBudget, splitSentences } from "./affirmation";
 
@@ -26,7 +26,8 @@ import { z } from "zod";
 export type TalkEvent =
   | { type: "turn"; turn: TurnView }
   | { type: "status"; state: "extracting" | "thinking" | "speaking" | "idle" }
-  | { type: "chips"; module: HydratedModule }
+  /** What he said was filed: how many things, and how many need him (each its own card). */
+  | { type: "filed"; filed: number; needs_you: number }
   | { type: "text"; delta: string }
   | { type: "module"; module: HydratedModule }
   | { type: "module_error"; key: string | null; errors: string[] }
@@ -148,25 +149,23 @@ export class Conversation {
     const blocks = [
       { text: `${personality.voice()}\n\nThe person you talk with is ${cfg.ownerName}.`, cache: false },
       { text: `## Example exchanges\n${personality.examples()}`, cache: false },
-      { text: CANVAS_PROTOCOL, cache: !spoken },
+      { text: STACK_PROTOCOL, cache: !spoken },
     ];
     if (spoken) blocks.push({ text: `## Speaking\n${personality.spoken()}`, cache: true });
     return blocks;
   }
 
-  /** Volatile per-turn context: the life model, the canvas, style notes, length guidance. */
+  /** Volatile per-turn context: the life model, his stack, style notes, length guidance. */
   contextBlock(convId: string, userText: string, spoken: boolean, extra: string[] = []): string {
-    const { canvas } = this.svc;
     const notes = this.styleNotes().filter((n) => n.active);
-    const events = canvas.takeEvents(convId);
     const lg = lengthGuidance(userText, spoken);
+    const stack = this.svc.cards.stack();
     return [
       `<context>`,
       lifeModelText(this.svc, { calendarDays: 2 }),
-      `What's on the canvas right now:\n${canvas.summary(convId)}`,
-      events.length ? `Since your last reply he did this on the canvas:\n${events.map((e) => `- ${e}`).join("\n")}` : "",
+      `His stack right now (top first):\n${stack.cards.map((c) => `- ${c.title}`).join("\n") || "- empty: all clear"}`,
       notes.length ? `His style notes (follow these):\n${notes.map((n) => `- ${n.text}`).join("\n")}` : "",
-      `This reply will be ${spoken ? "spoken aloud while the screen shows detail" : "read on screen"}. ${lg.note}`,
+      `This reply will be ${spoken ? "spoken aloud, with a short text version on screen" : "read on screen"}. ${lg.note}`,
       ...extra,
       `</context>`,
     ]
@@ -197,7 +196,7 @@ export class Conversation {
   // ---------------------------------------------------------------- directives
 
   handleDirective(convId: string, d: Directive, sink: Sink, turnRef: { id: string | null }): void {
-    const { canvas, proposals, log } = this.svc;
+    const { canvas, proposals, filing, log } = this.svc;
     try {
       if (d.kind === "show") {
         const r = canvas.show(convId, JSON.parse(d.body), "ava");
@@ -221,9 +220,12 @@ export class Conversation {
           log.warn("canvas.invalid", "Ava proposed changes that failed validation", { body: d.body });
           return;
         }
-        const batch = proposals.createBatch("conversation", entries);
-        const m = canvas.show(convId, { key: `chips-${batch.batch_id.slice(-5)}`, type: "confirmation_chips", batch_id: batch.batch_id, title: "Changes to confirm" }, "ava");
-        if (m.ok) sink({ type: "chips", module: m.module });
+        // Ava's own suggestions weren't said outright: each one asks him first, as a card.
+        const f = filing.file(
+          entries.map((e) => ({ change: e.change, summary: proposals.describe(e.change), reason: "Ava suggested this", stated: false })),
+          { origin: "conversation", evidence_id: null },
+        );
+        sink({ type: "filed", filed: f.filed.length, needs_you: f.needs_you.length });
       } else if (d.kind === "style_note") {
         this.addStyleNote(d.body, turnRef.id);
         sink({ type: "style_note", text: d.body });
@@ -295,20 +297,16 @@ export class Conversation {
     sink({ type: "turn", turn: userTurn });
     const evId = evidence.add({ kind: "transcript", source: "voice", content: text, summary: text.slice(0, 280), source_ref: userTurn.id });
 
-    // 1. Extraction first (Haiku), so the reply knows which chips are on screen.
+    // 1. Extraction first (Haiku): what he stated is filed now, with undo; what's ambiguous becomes a card.
     let chipsLine = "";
     if (models.available) {
       sink({ type: "status", state: "extracting" });
       try {
         const changes = await extract(svc, text, { purpose: "conversation.extract", origin: "interactive", signal });
         if (changes.length) {
-          const batch = proposals.createBatch(
-            "conversation",
-            changes.map((c) => ({ ...c, evidence_id: evId })),
-          );
-          const m = canvas.show(convId, { key: `chips-${batch.batch_id.slice(-5)}`, type: "confirmation_chips", batch_id: batch.batch_id, title: "From what you said" }, "extraction");
-          if (m.ok) sink({ type: "chips", module: m.module });
-          chipsLine = `Confirmation chips now on screen (key ${m.ok ? m.module.key : "?"}), from what he just said: ${batch.proposals.map((p) => p.summary).join("; ")}. Don't restate them; he'll accept or reject them.`;
+          const f = svc.filing.file(changes, { origin: "conversation", evidence_id: evId });
+          sink({ type: "filed", filed: f.filed.length, needs_you: f.needs_you.length });
+          chipsLine = `From what he just said, filed: ${f.filed.map((p) => p.summary).join("; ") || "nothing"}. Each of these needs his answer and is now a card: ${f.needs_you.map((p) => p.summary).join("; ") || "none"}. Don't restate them; at most say how many and that they're in his stack.`;
         }
       } catch (e) {
         log.warn("extraction.failed", `Extraction failed: ${(e as Error).message}`);

@@ -1,43 +1,27 @@
-import { z } from "zod";
 import { DateTime } from "luxon";
-import { formatClock, parseScript, type BriefView, type HydratedModule, type ModuleSpec } from "@ava/shared";
+import { formatClock, type BriefView, type CardView, type HydratedModule, type ModuleSpec, type WakeView } from "@ava/shared";
 import type { Services } from "../core/services";
 import { j, js, newId } from "../db/db";
-import { BudgetExceededError, ModelUnavailableError } from "../models/types";
-import { detectAffirmations } from "../conversation/affirmation";
-import { STATE_OF_MIND } from "../validator/message-validator";
-
-const BriefOutput = z.object({ spoken: z.string(), first_line: z.string() });
 
 /**
- * The morning brief: the daily anchor. The modules are built by the system
- * from real state; the model only writes the short spoken version that
- * points at them (under a minute), and it is checked like any operational
- * message. Without a model the brief is composed from templates.
+ * The morning stack. There is no written brief any more: at brief time the
+ * cards that waited overnight join the stack, along with the occasional
+ * question, rule approval and inference. The optional spoken version is a
+ * few sentences that point at the cards; it never recites the day. Nothing
+ * is pushed: it waits until he opens Ava.
  */
 export class BriefComposer {
   constructor(private svc: Services) {}
 
-  private specs(date: string, artifactIds: string[], ruleIds: string[]): ModuleSpec[] {
-    const specs: ModuleSpec[] = [
-      { key: "day", type: "day_timeline", title: "Today", date },
-      { key: "deadlines", type: "deadline_horizon", title: "Coming up", days: 7 },
-    ];
-    for (const a of artifactIds.slice(0, 3)) specs.push({ key: `prep-${a.slice(-5)}`, type: "artifact_preview", artifact_id: a });
-    for (const r of ruleIds.slice(0, 3)) specs.push({ key: `rule-${r.slice(-5)}`, type: "rule_card", rule_id: r, title: "Rule waiting for you" });
-    return specs;
-  }
-
   async compose(wakeId: string): Promise<string> {
     const svc = this.svc;
-    const { clock, settings, messages, questions, rules, db, canvas, log, models, cfg, personality, scheduler, items, planner } = svc;
+    const { clock, settings, messages, questions, db, log, items, cards, scheduler } = svc;
     const tz = settings.tz();
     const now = clock.now();
-    const local = DateTime.fromJSDate(now).setZone(tz);
-    const date = local.toISODate()!;
-    if (db.get("SELECT id FROM briefs WHERE date = ?", [date])) return "brief already composed today";
+    const date = DateTime.fromJSDate(now).setZone(tz).toISODate()!;
+    if (db.get("SELECT id FROM briefs WHERE date = ?", [date])) return "morning stack already composed today";
 
-    // Queued messages: drop stale ones (older than a day and a half, or about items now closed) and duplicates.
+    // Overnight messages: drop stale ones (older than a day and a half, or about items now closed) and duplicates.
     const seenKeys = new Set<string>();
     const queued = messages.queuedForBrief().filter((m) => {
       const stale = now.getTime() - new Date(m.created_at).getTime() > 36 * 3_600_000;
@@ -49,125 +33,46 @@ export class BriefComposer {
       const dup = seenKeys.has(key);
       seenKeys.add(key);
       if (stale || closed || dup) {
-        db.run("UPDATE messages SET status = 'dropped', block_reason = ? WHERE id = ?", [stale ? "stale by brief time" : closed ? "items already done" : "duplicate", m.id]);
+        db.run("UPDATE messages SET status = 'dropped', block_reason = ? WHERE id = ?", [stale ? "stale by morning" : closed ? "items already done" : "duplicate", m.id]);
+        cards.closeRef("message", m.id, "expired");
         return false;
       }
       return true;
     });
+    messages.markInBrief(queued.map((m) => m.id));
+
     const question = questions.open();
-    const proposals = rules.list().proposed;
-    const lastBrief = db.get<{ created_at: string }>("SELECT created_at FROM briefs ORDER BY created_at DESC LIMIT 1");
-    const since = lastBrief?.created_at ?? new Date(now.getTime() - 86_400_000).toISOString();
-    const prepared = db.all<{ id: string }>("SELECT a.id FROM artifacts a JOIN exec_tasks t ON t.id = a.exec_task_id WHERE a.created_at >= ? AND t.spec LIKE '%\"silent\":true%'", [since]).map((r) => r.id);
-
-    const modules: HydratedModule[] = [];
-    for (const spec of this.specs(date, prepared, proposals.map((p) => p.id))) {
-      const r = canvas.hydrator.hydrate(spec);
-      if (r.ok) modules.push(r.module);
-      else log.warn("canvas.invalid", `Brief module ${spec.key} failed: ${r.errors.join("; ")}`, undefined, wakeId);
+    if (question) {
+      cards.forQuestion(question);
+      questions.markAsked(question.id);
     }
+    cards.refreshPeriodic();
 
-    const day = modules.find((m) => m.key === "day");
-    const events = day?.data.type === "day_timeline" ? day.data.entries.filter((e) => e.kind === "event") : [];
-    const checkins = scheduler.between(now, local.endOf("day").toJSDate()).filter((w) => ["lookahead", "planner", "rule", "deadline"].includes(w.kind) && w.status === "pending");
-    const deadlines = modules.find((m) => m.key === "deadlines");
-    const dueSoon = deadlines?.data.type === "deadline_horizon" ? deadlines.data.items : [];
-    const completedYesterday = db.all<{ item_id: string }>("SELECT DISTINCT item_id FROM item_history WHERE field = 'status' AND new_value IN ('done','closed') AND at >= ?", [
-      local.minus({ days: 1 }).startOf("day").toUTC().toISO()!,
-    ]);
-    const blocks = db.all<{ title: string; start_at: string }>("SELECT title, start_at FROM plan_blocks WHERE status = 'planned' AND start_at >= ? AND start_at <= ? ORDER BY start_at", [
-      local.startOf("day").toUTC().toISO()!,
-      local.endOf("day").toUTC().toISO()!,
-    ]);
-
-    const facts = [
-      `Date: ${local.toFormat("cccc d LLLL")}. Location: ${settings.location().label}.`,
-      `Calendar today: ${events.map((e) => `${e.title} at ${formatClock(e.start, tz)}`).join("; ") || "nothing"}.`,
-      `Ava's plan for today: ${blocks.map((b) => `${b.title} at ${formatClock(b.start_at, tz)}`).join("; ") || "no planned blocks"}.`,
-      `Ava will check in: ${checkins.map((w) => `${formatClock(w.due_at, tz)} (${w.reason})`).join("; ") || "only at the usual heartbeats"}.`,
-      `Due in the next 7 days: ${dueSoon.map((d) => `${d.title} (${d.due_phrase}, ${d.status_label.toLowerCase()})`).join("; ") || "nothing"}.`,
-      `Queued overnight: ${queued.map((m) => `${m.headline} — ${m.because}`).join("; ") || "nothing"}.`,
-      `Prepared overnight: ${prepared.length ? `${prepared.length} item(s), shown on screen` : "nothing"}.`,
-      `Question for him: ${question ? question.text : "none"}.`,
-      `Rule proposals awaiting approval: ${proposals.map((p) => p.name).join("; ") || "none"}.`,
-      `Finished yesterday: ${items.byIds(completedYesterday.map((c) => c.item_id)).map((i) => i.title).join("; ") || "nothing recorded"}.`,
-      planner.latestBriefNotes() ? `Planner's notes for this brief: ${planner.latestBriefNotes()}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    let spoken = "";
-    let firstLine = "";
-    let draftedBy: "model" | "fallback_template" = "model";
-    try {
-      const res = await models.complete({
-        purpose: "brief.compose",
-        origin: "system",
-        model: cfg.models.conversation,
-        maxTokens: 1500,
-        effort: "low",
-        wakeId,
-        schema: BriefOutput,
-        system: [
-          { text: `${personality.voice()}\n\n${personality.operational()}\n\n${personality.spoken()}`, cache: true },
-          {
-            text: `Write the spoken part of this morning's brief. It plays when he opens it, while the screen shows the details, so it must stay under a minute (about 130 words). Point first. Never read a list aloud: summarize and point to the screen. The screen shows modules with these keys: ${modules.map((m) => `${m.key} (${m.title})`).join(", ")}${question ? ", question" : ""}${queued.length ? ", queued" : ""}. Put a cue token like [[day]] right before the sentence that refers to a module so it appears as you say it. If there is a question, ask it once, near the end. No praise unless acknowledging something he really finished yesterday. first_line: the single most important point, for the notification.`,
-            cache: false,
-          },
-        ],
-        messages: [{ role: "user", content: facts }],
-      });
-      if (!res.parsed) throw new Error(res.parseError ?? "no output");
-      spoken = res.parsed.spoken;
-      firstLine = res.parsed.first_line;
-      const plain = parseScript(spoken).text;
-      const praise = detectAffirmations(plain);
-      const mind = STATE_OF_MIND.exec(plain);
-      const words = plain.split(/\s+/).length;
-      if ((praise.length && !completedYesterday.length) || mind || words > 190) {
-        log.warn("brief.rejected_draft", `Brief draft failed checks (${[praise.length ? "praise" : "", mind ? "state of mind" : "", words > 190 ? `${words} words` : ""].filter(Boolean).join(", ")}); using the template`, { spoken }, wakeId);
-        throw new Error("draft failed checks");
-      }
-    } catch (e) {
-      if (!(e instanceof ModelUnavailableError) && !(e instanceof BudgetExceededError)) log.warn("brief.fallback", `Brief uses the template: ${(e as Error).message}`, undefined, wakeId);
-      draftedBy = "fallback_template";
-      const first = events[0];
-      const parts = [
-        `[[day]]${events.length ? `${events.length === 1 ? "One thing" : `${events.length} things`} on the calendar today, starting with ${first.title} at ${formatClock(first.start, tz)}.` : "Nothing on the calendar today."}`,
-        checkins.length ? `I'll check in at ${formatClock(checkins[0].due_at, tz)}${checkins.length > 1 ? ` and ${checkins.length - 1} more time${checkins.length > 2 ? "s" : ""}` : ""}.` : "",
-        dueSoon.length ? `[[deadlines]]${dueSoon[0].title} is due ${dueSoon[0].due_phrase}${dueSoon.length > 1 ? `, and ${dueSoon.length - 1} more this week are on screen` : ""}.` : "",
-        queued.length ? `${queued.length === 1 ? "One message" : `${queued.length} messages`} waited overnight; they're below.` : "",
-        proposals.length ? `${proposals.length === 1 ? "A rule proposal needs" : `${proposals.length} rule proposals need`} your yes or no.` : "",
-        question ? `One question: ${question.text}` : "",
-      ];
-      spoken = parts.filter(Boolean).join(" ");
-      firstLine = dueSoon.length ? `${dueSoon[0].title} is due ${dueSoon[0].due_phrase}` : events.length ? `${events.length} on the calendar today` : "Your brief is ready";
-    }
+    const stack = cards.stack();
+    const next = scheduler.pending({ from: now }).find((w) => w.kind !== "event" && w.kind !== "executor");
+    const spoken = morningWords(stack.cards, next ? scheduler.view(next) : null, tz);
 
     const id = newId("brf");
     db.run("INSERT INTO briefs (id, date, spoken, modules, question_id, message_ids, drafted_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
       id,
       date,
       spoken,
-      js(modules.map((m) => m.spec)),
+      js([]),
       question?.id ?? null,
       js(queued.map((m) => m.id)),
-      draftedBy,
+      "system",
       now.toISOString(),
     ]);
-    messages.markInBrief(queued.map((m) => m.id));
-    if (question) questions.markAsked(question.id);
-    // Pre-render the spoken brief so it plays the moment he opens it.
+    // Pre-render the spoken version so it plays the moment he opens Ava, if he wants it.
     if (svc.voice.ttsAvailable("async")) {
       void svc.voice
         .renderAsync(spoken, { purpose: "brief", operational: true })
         .then((audio) => audio && db.run("UPDATE briefs SET audio_id = ? WHERE id = ?", [audio.audio_id, id]))
-        .catch((e) => log.warn("brief.tts_failed", `Couldn't pre-render brief audio: ${(e as Error).message}`));
+        .catch((e) => log.warn("brief.tts_failed", `Couldn't pre-render the morning words: ${(e as Error).message}`));
     }
-    await svc.channels.notify(firstLine, "Your morning brief is ready.", "/today?brief=1", id, wakeId);
     svc.bus.emit({ type: "brief.ready", brief_id: id });
-    log.info("brief.composed", `Morning brief composed (${draftedBy.replace("_", " ")}): ${firstLine}`, { brief_id: id, queued: queued.length, question: question?.id ?? null }, wakeId);
-    return `brief composed (${queued.length} queued messages, ${proposals.length} rule proposals)`;
+    log.info("brief.composed", `Morning stack: ${stack.cards.length} card${stack.cards.length === 1 ? "" : "s"}${queued.length ? `, ${queued.length} waited overnight` : ""}`, { brief_id: id, cards: stack.cards.map((c) => c.title) }, wakeId);
+    return `morning stack: ${stack.cards.length} cards (${queued.length} waited overnight)`;
   }
 
   view(id?: string): BriefView | null {
@@ -193,4 +98,12 @@ export class BriefComposer {
       drafted_by: r.drafted_by as BriefView["drafted_by"],
     };
   }
+}
+
+/** A few sentences that point at the cards. */
+export function morningWords(cards: CardView[], next: WakeView | null, tz: string): string {
+  if (!cards.length) return `Morning. Nothing needs you right now.${next ? ` I'll check in at ${formatClock(next.due_at, tz)}.` : ""}`;
+  if (cards.length === 1) return `Morning. One thing needs you: ${cards[0].title}.`;
+  const n = ["", "", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight"][cards.length] ?? String(cards.length);
+  return `Morning. ${n} things in your stack. First: ${cards[0].title}.`;
 }

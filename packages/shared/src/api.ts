@@ -1,7 +1,7 @@
-import type { OptionAction, HydratedModule, ArtifactView } from "./canvas";
+import type { OptionAction, HydratedModule, ArtifactView, HydratedItem } from "./canvas";
 import type { ResponseKind, Proposal } from "./changes";
 import type { Item, Belief } from "./items";
-import type { RuleView } from "./rules";
+import type { RuleView, ShadowResult } from "./rules";
 
 export interface MessageOption {
   key: string;
@@ -123,7 +123,7 @@ export interface BriefView {
   rule_proposals: RuleView[];
   created_at: string;
   audio_id: string | null;
-  drafted_by: "model" | "fallback_template";
+  drafted_by: "model" | "fallback_template" | "system";
 }
 
 export interface ExternalActionView {
@@ -216,4 +216,93 @@ export interface UsageView {
   budget: { system_calls: number; interactive_calls: number; usd: number };
   by_purpose: { purpose: string; calls: number; cost_usd: number; avg_ms: number }[];
   recent: { id: string; at: string; purpose: string; model: string; ms: number; cost_usd: number; status: string; cache_read: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Threads, cards and the stack
+// ---------------------------------------------------------------------------
+
+/** A thread: one top-level area of his life right now ("Midterm week", "Finish the SOP"). */
+export interface ThreadNode {
+  id: string;
+  title: string;
+  open_count: number;
+  /** Threads Ava grouped under this one to keep the top level short. */
+  children: ThreadNode[];
+  items: (HydratedItem & { subtasks: HydratedItem[] })[];
+}
+
+/** Do: an action. Pick: a decision between 2 to 4 options. Know: a heads-up that needs nothing. */
+export type CardKind = "do" | "pick" | "know";
+
+export interface CardOption {
+  key: string;
+  label: string;
+  detail: string | null;
+  /** True when choosing it starts preparatory work (an executor session). */
+  work: boolean;
+}
+
+/** Layer 1: one line saying what it is, and a short "why now". */
+export interface CardView {
+  id: string;
+  kind: CardKind;
+  title: string;
+  why: string | null;
+  thread: { id: string; title: string } | null;
+  /** The first option is what "yes" does. */
+  options: CardOption[];
+  time_sensitive: boolean;
+  /** How many times he has said "not now" to it. */
+  returns: number;
+  /** Whether "already done" means anything for this card (it is about real items). */
+  has_items: boolean;
+  created_at: string;
+}
+
+export interface FiledEntry {
+  proposal_id: string;
+  summary: string;
+  status: "filed" | "undone" | "needs_you";
+}
+
+/** Layer 2: the thread's few relevant parts, the options in detail, or what was filed. */
+export interface CardLayer2 {
+  card_id: string;
+  parts: HydratedItem[];
+  options: CardOption[];
+  filed: FiledEntry[];
+  paragraphs: string[];
+  shadow: ShadowResult | null;
+}
+
+/** Layer 3: the work itself or the full detail. */
+export interface CardLayer3 {
+  card_id: string;
+  artifact: ArtifactView | null;
+  action: ExternalActionView | null;
+  paragraphs: string[];
+  /** Why Ava brought it up: the rule and its evidence. */
+  rule: { name: string; sentence: string; evidence: string | null } | null;
+  items: HydratedItem[];
+}
+
+export type CardResponse = "yes" | "not_now" | "already_done" | "stop";
+
+export interface CardResult {
+  card: CardView;
+  summary: string;
+  /** For the client: open the confirm-send sheet or an artifact. */
+  open: { kind: "action"; id: string } | { kind: "artifact"; id: string } | null;
+  exec_task_id: string | null;
+  returns_at: string | null;
+}
+
+export interface StackView {
+  cards: CardView[];
+  /** Active cards waiting beyond the ones shown. */
+  waiting: number;
+  all_clear: { next_check_in: WakeView | null } | null;
+  /** The optional spoken morning version: a few sentences pointing at the cards. */
+  morning: { brief_id: string; text: string } | null;
 }

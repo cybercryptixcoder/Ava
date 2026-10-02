@@ -224,8 +224,8 @@ ${this.context(task.item_id)}`,
       scheduler.request({ kind: "executor", at, reason: `Continue ${task.title}: ${out.report.next_focus ?? "next session"}`, owner: `executor:${taskId}`, item_ids: task.item_id ? [task.item_id] : [], payload: { exec_task_id: taskId } }, wakeId);
     }
     if (!task.spec.silent) {
-      this.svc.canvas.presentArtifact(artifactId);
-      await this.svc.channels.notify(`${out.artifact.title} is ready`, out.report.result, `/talk?artifact=${artifactId}`, artifactId);
+      // A heads-up in the stack when he next looks; work he asked for isn't worth an interruption.
+      this.svc.cards.forArtifact(artifactId, out.artifact.title, out.report.result, task.item_id);
     }
     bus.emit({ type: "exec.updated", exec_task_id: taskId, status: more ? "needs_next" : "done" });
     return `${task.kind} session ${sessions}${more ? ", next session requested" : ", done"}`;

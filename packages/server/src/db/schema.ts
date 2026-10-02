@@ -403,4 +403,48 @@ export const MIGRATIONS: string[] = [
     results TEXT NOT NULL
   );
   `,
+  /* 2: threads, cards, auto-filing with undo */ `
+  ALTER TABLE items ADD COLUMN thread_id TEXT;
+  ALTER TABLE items ADD COLUMN parent_id TEXT;
+  CREATE INDEX items_thread ON items(thread_id);
+  CREATE INDEX items_parent ON items(parent_id);
+  CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL,
+    parent_id TEXT,
+    merged_into TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE cards (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    ref_id TEXT,
+    thread_id TEXT,
+    item_ids TEXT NOT NULL DEFAULT '[]',
+    title TEXT NOT NULL,
+    why TEXT,
+    options TEXT NOT NULL DEFAULT '[]',
+    data TEXT NOT NULL DEFAULT '{}',
+    priority REAL NOT NULL DEFAULT 0,
+    time_sensitive INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    visible_from TEXT NOT NULL,
+    snoozed_until TEXT,
+    expires_at TEXT,
+    returns INTEGER NOT NULL DEFAULT 0,
+    pushed_at TEXT,
+    response TEXT,
+    responded_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX cards_status ON cards(status, visible_from);
+  CREATE INDEX cards_ref ON cards(source, ref_id);
+  ALTER TABLE proposals ADD COLUMN auto INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE proposals ADD COLUMN undo TEXT;
+  `,
 ];

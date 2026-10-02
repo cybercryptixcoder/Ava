@@ -30,6 +30,9 @@ import type { OptionRunner } from "../actions/options";
 import type { WakeProcedure } from "../wake/procedure";
 import type { AudioStore } from "../voice/audio-store";
 import type { Rhythms } from "../state/rhythms";
+import type { ThreadStore } from "../state/threads";
+import type { Filing } from "../state/filing";
+import type { CardStore } from "../cards/cards";
 
 /** Everything a module may need. Built once in app.ts; tests build it with fakes for external services. */
 export interface Services {
@@ -45,6 +48,9 @@ export interface Services {
   evidence: EvidenceStore;
   beliefs: BeliefStore;
   proposals: ProposalStore;
+  threads: ThreadStore;
+  filing: Filing;
+  cards: CardStore;
   questions: QuestionStore;
   rhythms: Rhythms;
   models: ModelGateway;

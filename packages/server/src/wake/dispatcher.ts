@@ -13,7 +13,7 @@ export type DispatchOutcome =
   | { kind: "dropped"; reason: string };
 
 /**
- * Step 7 of the wake procedure: send now, or queue for the morning brief,
+ * Step 7 of the wake procedure: send now, or queue for the morning stack,
  * depending on urgency, caps, quiet hours and class blocks. The caps here
  * are constitutional; no rule or setting written by Ava can reach them.
  *
@@ -34,7 +34,7 @@ export class Dispatcher {
     draftedBy: "model" | "fallback_template",
     sentThisWake: number,
   ): Promise<DispatchOutcome> {
-    const { settings, clock, counters, messages, channels, log, scheduler, db } = this.svc;
+    const { settings, clock, counters, messages, cards, log, scheduler, db } = this.svc;
     const s = settings.get();
     const now = clock.now();
     const tz = settings.tz();
@@ -58,7 +58,9 @@ export class Dispatcher {
         return { kind: "dropped", reason };
       }
       const message = messages.create({ ...base, status: "queued", block_reason: reason });
-      log.info("message.queued", `Queued for the morning brief (${reason}): ${rendered.headline}`, { message_id: message.id, rule: c.rule_name }, wakeId);
+      // Queued means it waits for the morning stack, silently.
+      cards.fromMessage(message, { visibleFrom: cards.nextMorning(), priority: c.priority });
+      log.info("message.queued", `Queued for the morning stack (${reason}): ${rendered.headline}`, { message_id: message.id, rule: c.rule_name }, wakeId);
       return { kind: "queued", message, reason };
     };
 
@@ -101,7 +103,9 @@ export class Dispatcher {
     const message = messages.create({ ...base, status: "sent" });
     counters.add("messages.unprompted");
     log.info("message.sent", `Sent: ${rendered.headline} — because ${rendered.because}`, { message_id: message.id, rule: c.rule_name, cited: draft.cited_item_ids }, wakeId);
-    await channels.deliver(message);
+    // Sent means it joins the stack now; only time-sensitive cards are pushed, and only a couple a day.
+    const card = cards.fromMessage(message, { visibleFrom: now, priority: c.priority, expiresAt: queueable ? null : new Date(now.getTime() + c.cooldown_hours * 3_600_000) });
+    await cards.pushIfDue(card, wakeId);
     this.svc.bus.emit({ type: "message.sent", message_id: message.id });
     return { kind: "sent", message };
   }

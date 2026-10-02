@@ -22,6 +22,8 @@ const PlanOutput = z.object({
   question: z.object({ text: z.string(), why: z.string(), about_item_id: z.string().nullable(), about_belief_id: z.string().nullable() }).nullable(),
   belief_proposals: z.array(z.object({ area: z.string(), statement: z.string(), confidence: z.number(), evidence_note: z.string(), subject_item_id: z.string().nullable() })),
   brief_notes: z.string().nullable(),
+  /** Regrouping threads: move items into a thread by title (new or existing), optionally under a group. Empty when the grouping is fine. */
+  threads: z.array(z.object({ title: z.string(), item_ids: z.array(z.string()), group: z.string().nullable() })),
 });
 type PlanOut = z.infer<typeof PlanOutput>;
 
@@ -40,6 +42,7 @@ You plan ahead, with time to think. The system owns time, triggers, execution an
 - You may propose dynamic rules for how his life is going this week. Messaging rules need his approval; wake/prepare rules auto-approve within budget. Every rule expires (default 14 days). Propose at most what's genuinely useful; the system caps proposals per week and active rules overall, so a readable rule set beats a clever one. Ground each rule's evidence in the data you were shown (e.g. "you acted on 4 of 5 study nudges sent 7–9pm and ignored all 3 sent before noon").
 - You can ask one well-chosen question when an unknown really matters (e.g. whether a project still matters). Only when the answer would change what Ava does.
 - Belief proposals are inferences; they stay unconfirmed until he confirms them. Don't invent states of mind.
+- Threads are the few top-level areas of his life right now ("Midterm week", "Finish the SOP", "OS project"); every task, deadline, commitment and open loop sits in one. Keep the top level to about 7: when there are more, group related threads under a broader one (the group field) rather than adding more. Return threads only to regroup or to name a thread better; short, plain titles.
 
 Times are local to his current time zone, formatted "YYYY-MM-DDTHH:MM". Item ids must be real ids from the context. Return empty arrays when there's nothing worth doing; quiet is fine.
 
@@ -134,6 +137,19 @@ export class Planner {
     }
     notes.push(`${wakes}/${out.wake_requests.length} wake requests accepted`);
 
+    let regrouped = 0;
+    for (const t of out.threads) {
+      const ids = t.item_ids.filter((id) => items.get(id));
+      if (!ids.length) continue;
+      const thread = this.svc.threads.move(ids, { title: t.title }, "planner");
+      if (t.group) this.svc.threads.nest(thread.id, t.group);
+      regrouped++;
+    }
+    if (out.threads.length) {
+      this.svc.threads.enforceCap();
+      notes.push(`${regrouped} threads regrouped`);
+    }
+
     let proposed = 0;
     for (const p of out.rule_proposals) {
       const r = this.proposeRule(p, "planner");
@@ -188,6 +204,8 @@ export class Planner {
       log.warn("rule.shadow_failed", `Shadow run failed for "${p.name}": ${(e as Error).message}`);
     }
     if (revisionOf) rules.setProposedRevision(revisionOf, r.rule.id);
+    // A rule that would message him asks for his yes as a card, at most about once a week.
+    this.svc.cards.forRuleApproval(r.rule.id);
     return r.rule.id;
   }
 
@@ -216,7 +234,7 @@ export class Planner {
   }
 
   async weekly(wakeId: string): Promise<string> {
-    const { rules, messages, channels, log } = this.svc;
+    const { rules, messages, cards, log } = this.svc;
     const paused = rules.list().dynamic.filter((r) => r.status === "paused_low_precision");
     const r = await this.call(
       "planner.weekly",
@@ -246,8 +264,9 @@ export class Planner {
       status: "sent",
       drafted_by: "model",
     });
-    await channels.notify(out.review.headline, "Your weekly review is ready.", `/messages?focus=${m.id}`, m.id, wakeId);
-    log.info("planner.weekly_review", `Weekly review sent: ${out.review.headline}`, { message_id: m.id, revisions }, wakeId);
+    // A heads-up in the stack, not a notification.
+    cards.forReview(m);
+    log.info("planner.weekly_review", `Weekly review in the stack: ${out.review.headline}`, { message_id: m.id, revisions }, wakeId);
     return `weekly review: ${notes.join(", ")}, ${revisions} revisions`;
   }
 
@@ -272,13 +291,4 @@ export class Planner {
     }
   }
 
-  latestBriefNotes(): string | null {
-    const r = this.svc.db.get<{ content: string }>("SELECT content FROM plans WHERE kind = 'evening' ORDER BY created_at DESC LIMIT 1");
-    if (!r) return null;
-    try {
-      return (JSON.parse(r.content) as PlanOut).brief_notes;
-    } catch {
-      return null;
-    }
-  }
 }

@@ -2,7 +2,6 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { parseScript } from "@ava/shared";
 import type { Services } from "../core/services";
 import { js, newId, j } from "../db/db";
-import { CANVAS_PROTOCOL } from "../conversation/protocol";
 import { lengthGuidance } from "../conversation/conversation";
 import { detectAffirmations } from "../conversation/affirmation";
 import { parseReply } from "../conversation/directives";
@@ -110,7 +109,6 @@ export class PersonalityRunner {
     const run: PersonalityRun = { id: newId("prn"), created_at: clock.now().toISOString(), voice_hash: personality.hash(), label: opts.label ?? null, results };
     db.run("INSERT INTO personality_runs (id, created_at, voice_hash, label, results) VALUES (?, ?, ?, ?, ?)", [run.id, run.created_at, run.voice_hash, run.label, js(results)]);
     log.info("personality.run", `Personality test set ran: ${results.length} cases, ${results.reduce((n, r) => n + r.checks.filter((c) => !c.ok).length, 0)} failed checks`, { run_id: run.id });
-    void CANVAS_PROTOCOL;
     return run;
   }
 }

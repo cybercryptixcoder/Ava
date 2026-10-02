@@ -32,6 +32,8 @@ function rowToItem(r: Record<string, unknown>): Item {
     start_at: (r.start_at as string) ?? null,
     end_at: (r.end_at as string) ?? null,
     project_id: (r.project_id as string) ?? null,
+    thread_id: (r.thread_id as string) ?? null,
+    parent_id: (r.parent_id as string) ?? null,
     importance: r.importance === null || r.importance === undefined ? null : Number(r.importance),
     tags: j(r.tags, []),
     source: String(r.source),
@@ -49,6 +51,7 @@ export interface ItemFilter {
   statuses?: string[];
   open?: boolean;
   project_id?: string;
+  thread_id?: string;
   tag?: string;
   due_before?: string;
   due_after?: string;
@@ -121,6 +124,10 @@ export class ItemStore {
       where.push("project_id = ?");
       p.push(f.project_id);
     }
+    if (f.thread_id) {
+      where.push("thread_id = ?");
+      p.push(f.thread_id);
+    }
     if (f.tag) {
       where.push("tags LIKE ?");
       p.push(`%"${f.tag}"%`);
@@ -173,9 +180,9 @@ export class ItemStore {
     const id = newId(def.idPrefix);
     const status = draft.status ?? def.statuses[0];
     this.db.run(
-      `INSERT INTO items (id, type, title, status, data, due_at, start_at, end_at, project_id, importance, tags, source, source_ref,
+      `INSERT INTO items (id, type, title, status, data, due_at, start_at, end_at, project_id, thread_id, parent_id, importance, tags, source, source_ref,
         created_at, updated_at, touched_at, status_changed_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         draft.type,
@@ -186,6 +193,8 @@ export class ItemStore {
         normalizeInstant(draft.start_at),
         normalizeInstant(draft.end_at),
         draft.project_id ?? null,
+        draft.thread_id ?? null,
+        draft.parent_id ?? null,
         draft.importance ?? null,
         js(draft.tags ?? []),
         opts.source,
@@ -220,6 +229,8 @@ export class ItemStore {
       start_at: patch.start_at !== undefined ? normalizeInstant(patch.start_at) : before.start_at,
       end_at: patch.end_at !== undefined ? normalizeInstant(patch.end_at) : before.end_at,
       project_id: patch.project_id !== undefined ? patch.project_id : before.project_id,
+      thread_id: patch.thread_id !== undefined ? patch.thread_id : before.thread_id,
+      parent_id: patch.parent_id !== undefined ? patch.parent_id : before.parent_id,
       importance: patch.importance !== undefined ? patch.importance : before.importance,
       tags: js(patch.tags ?? before.tags),
       updated_at: now,
@@ -228,7 +239,7 @@ export class ItemStore {
       completed_at: closedNow ? (before.completed_at ?? now) : null,
     };
     this.db.run(
-      `UPDATE items SET title=?, status=?, data=?, due_at=?, start_at=?, end_at=?, project_id=?, importance=?, tags=?,
+      `UPDATE items SET title=?, status=?, data=?, due_at=?, start_at=?, end_at=?, project_id=?, thread_id=?, parent_id=?, importance=?, tags=?,
         updated_at=?, touched_at=?, status_changed_at=?, completed_at=? WHERE id=?`,
       [
         fields.title as string,
@@ -238,6 +249,8 @@ export class ItemStore {
         fields.start_at as string | null,
         fields.end_at as string | null,
         fields.project_id as string | null,
+        fields.thread_id as string | null,
+        fields.parent_id as string | null,
         fields.importance as number | null,
         fields.tags as string,
         now,

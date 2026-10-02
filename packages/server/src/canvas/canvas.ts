@@ -163,13 +163,6 @@ export class Canvas {
     });
   }
 
-  /** An executor finished: put the artifact on the current canvas. */
-  presentArtifact(artifactId: string): void {
-    const conv = this.current();
-    const a = this.svc.executors.artifact(artifactId);
-    this.show(conv, { key: `art-${artifactId.slice(-6)}`, type: "artifact_preview", artifact_id: artifactId, title: a?.title }, "executor");
-  }
-
   /** Turns for display, newest last. */
   turnsFor(convId: string): TurnView[] {
     return this.svc.conversation.turns(convId);
