@@ -1,0 +1,40 @@
+{
+  "name": "ava",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ava: a self-hosted, proactive personal agent for one person.",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/web",
+    "packages/collector"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:test": "node scripts/dev.mjs --profile=test",
+    "build": "npm run build -w @ava/web && npm run build -w @ava/server && npm run build -w @ava/collector",
+    "start": "npm run build && npm run start:prod",
+    "start:prod": "NODE_ENV=production node --no-warnings=ExperimentalWarning packages/server/dist/server.mjs",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/server && tsc -p packages/web && tsc -p packages/collector",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test -c packages/web/playwright.config.ts",
+    "screenshots": "node scripts/screenshots.mjs",
+    "voice:test": "npm run -w @ava/server personality:test --",
+    "bench:voice": "npm run -w @ava/server bench:voice --",
+    "config:check": "npm run -w @ava/server config:check",
+    "vapid": "npm run -w @ava/server vapid",
+    "hash-password": "npm run -w @ava/server hash-password --",
+    "seed:test": "npm run -w @ava/server seed:test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

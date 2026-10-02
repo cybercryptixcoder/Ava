@@ -1,0 +1,387 @@
+import type Anthropic from "@anthropic-ai/sdk";
+import { DateTime } from "luxon";
+import { ChangeSchema, parseScript, type Change, type HydratedModule, type TurnView } from "@ava/shared";
+import type { Services } from "../core/services";
+import { j, js, newId } from "../db/db";
+import { lifeModelText } from "../planner/context";
+import { CANVAS_PROTOCOL } from "./protocol";
+import { DirectiveParser, type Directive } from "./directives";
+import { enforceAffirmationBudget, splitSentences } from "./affirmation";
+import { extract } from "./extraction";
+import { z } from "zod";
+
+export type TalkEvent =
+  | { type: "turn"; turn: TurnView }
+  | { type: "status"; state: "extracting" | "thinking" | "speaking" | "idle" }
+  | { type: "chips"; module: HydratedModule }
+  | { type: "text"; delta: string }
+  | { type: "module"; module: HydratedModule }
+  | { type: "module_error"; key: string | null; errors: string[] }
+  | { type: "remove"; key: string }
+  | { type: "replace_text"; text: string }
+  | { type: "style_note"; text: string }
+  | { type: "done"; turn: TurnView }
+  | { type: "audio"; audio_id: string; cues: { target: string; at_ms: number }[]; duration_ms: number | null }
+  | { type: "error"; message: string };
+
+export type Sink = (e: TalkEvent) => void;
+
+const TOOLS: Anthropic.Tool[] = [
+  {
+    name: "get_module_state",
+    description: "Fetch the full current contents of a module on the canvas by its key, when the one-line summary isn't enough.",
+    input_schema: { type: "object", properties: { key: { type: "string" } }, required: ["key"], additionalProperties: false },
+  },
+];
+
+const AffirmationCheck = z.object({ praise_sentence_indices: z.array(z.number().int()) });
+
+export function lengthGuidance(userText: string, spoken: boolean): { note: string; maxTokens: number; kind: "quick" | "riff" | "dump" | "normal" } {
+  const words = userText.trim().split(/\s+/).filter(Boolean).length;
+  const asks = /\?|what do you think|thoughts\?|what if|how would|should i/i.test(userText);
+  if (words <= 25 && !asks)
+    return { kind: "quick", maxTokens: 700, note: "He fired off a quick update. Answer in a line, maybe two. If it changed something, the chips cover it; don't restate them." };
+  if (words >= 220)
+    return {
+      kind: "dump",
+      maxTokens: 3000,
+      note: `He dumped a lot (${words} words). Pull out the threads that matter, put structure on the canvas, pick the single most interesting thread and go a little deeper on it, and ask at most one question. ${spoken ? "Keep the spoken part to a few short paragraphs." : "Keep it to a few short paragraphs."}`,
+    };
+  if (asks || /\b(idea|i think|i've been thinking|riff|what about)\b/i.test(userText))
+    return { kind: "riff", maxTokens: 2500, note: "He's thinking out loud with you. Engage with the substance: build on it, find the interesting thread, push back where he's wrong. You can go longer here." };
+  return { kind: "normal", maxTokens: 1500, note: "Match his length and energy." };
+}
+
+/**
+ * Async conversation: he dictates (often at length), Ava extracts structured
+ * changes as confirmation chips, thinks, and replies in words plus canvas
+ * modules. Quality beats speed here.
+ */
+export class Conversation {
+  constructor(private svc: Services) {}
+
+  turns(convId: string, limit = 40): TurnView[] {
+    const { db, cipher } = this.svc;
+    return db
+      .all<Record<string, unknown>>("SELECT * FROM turns WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?", [convId, limit])
+      .reverse()
+      .map((r) => ({
+        id: String(r.id),
+        role: r.role as "user" | "ava",
+        mode: r.mode as "async" | "live",
+        text: cipher.decOpt(r.text_enc as string) ?? "",
+        input_kind: (r.input_kind as string) ?? null,
+        created_at: String(r.created_at),
+        audio_id: (r.audio_id as string) ?? null,
+        cues: j(r.cues, null),
+        trimmed_affirmation: !!r.trimmed,
+      }));
+  }
+
+  saveTurn(t: { convId: string; role: "user" | "ava"; mode: "async" | "live"; text: string; raw?: string; input_kind?: string; operational?: boolean; affirmation?: boolean; trimmed?: boolean }): TurnView {
+    const { db, cipher, clock } = this.svc;
+    const id = newId("trn");
+    db.run(
+      "INSERT INTO turns (id, conversation_id, role, mode, text_enc, raw_enc, input_kind, operational, affirmation, trimmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        id,
+        t.convId,
+        t.role,
+        t.mode,
+        cipher.encrypt(t.text),
+        t.raw ? cipher.encrypt(t.raw) : null,
+        t.input_kind ?? null,
+        t.operational ? 1 : 0,
+        t.affirmation ? 1 : 0,
+        t.trimmed ? 1 : 0,
+        clock.now().toISOString(),
+      ],
+    );
+    return this.turns(t.convId, 1)[0];
+  }
+
+  setTurnAudio(turnId: string, audioId: string, cues: { target: string; at_ms: number }[]): void {
+    this.svc.db.run("UPDATE turns SET audio_id = ?, cues = ? WHERE id = ?", [audioId, js(cues), turnId]);
+  }
+
+  // ---------------------------------------------------------------- style notes
+
+  styleNotes(): { id: string; text: string; active: boolean; created_at: string }[] {
+    return this.svc.db.all<{ id: string; text: string; active: number; created_at: string }>("SELECT * FROM style_notes ORDER BY created_at").map((r) => ({ ...r, active: !!r.active }));
+  }
+
+  addStyleNote(text: string, turnId: string | null): void {
+    const now = this.svc.clock.now().toISOString();
+    this.svc.db.run("INSERT INTO style_notes (id, text, source_turn_id, active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)", [newId("sty"), text.trim(), turnId, now, now]);
+    this.svc.log.info("style.note", `Style note captured: ${text.trim()}`);
+  }
+
+  editStyleNote(id: string, patch: { text?: string; active?: boolean }): void {
+    const now = this.svc.clock.now().toISOString();
+    const cur = this.svc.db.get<{ text: string; active: number }>("SELECT text, active FROM style_notes WHERE id = ?", [id]);
+    if (!cur) throw new Error("No such style note");
+    this.svc.db.run("UPDATE style_notes SET text = ?, active = ?, updated_at = ? WHERE id = ?", [patch.text ?? cur.text, patch.active === undefined ? cur.active : patch.active ? 1 : 0, now, id]);
+  }
+
+  removeStyleNote(id: string): void {
+    this.svc.db.run("DELETE FROM style_notes WHERE id = ?", [id]);
+  }
+
+  // ---------------------------------------------------------------- prompts
+
+  /** The stable part of the conversational system prompt (cached). */
+  systemBlocks(spoken: boolean): { text: string; cache?: boolean }[] {
+    const { personality, cfg } = this.svc;
+    const blocks = [
+      { text: `${personality.voice()}\n\nThe person you talk with is ${cfg.ownerName}.`, cache: false },
+      { text: `## Example exchanges\n${personality.examples()}`, cache: false },
+      { text: CANVAS_PROTOCOL, cache: !spoken },
+    ];
+    if (spoken) blocks.push({ text: `## Speaking\n${personality.spoken()}`, cache: true });
+    return blocks;
+  }
+
+  /** Volatile per-turn context: the life model, the canvas, style notes, length guidance. */
+  contextBlock(convId: string, userText: string, spoken: boolean, extra: string[] = []): string {
+    const { canvas } = this.svc;
+    const notes = this.styleNotes().filter((n) => n.active);
+    const events = canvas.takeEvents(convId);
+    const lg = lengthGuidance(userText, spoken);
+    return [
+      `<context>`,
+      lifeModelText(this.svc, { calendarDays: 2 }),
+      `What's on the canvas right now:\n${canvas.summary(convId)}`,
+      events.length ? `Since your last reply he did this on the canvas:\n${events.map((e) => `- ${e}`).join("\n")}` : "",
+      notes.length ? `His style notes (follow these):\n${notes.map((n) => `- ${n.text}`).join("\n")}` : "",
+      `This reply will be ${spoken ? "spoken aloud while the screen shows detail" : "read on screen"}. ${lg.note}`,
+      ...extra,
+      `</context>`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  /** Prior turns as model messages, with directives summarized so the model remembers what it showed. */
+  history(convId: string, limit = 12): Anthropic.MessageParam[] {
+    const { db, cipher } = this.svc;
+    const rows = db
+      .all<Record<string, unknown>>("SELECT role, text_enc, raw_enc FROM turns WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?", [convId, limit])
+      .reverse();
+    const out: Anthropic.MessageParam[] = [];
+    for (const r of rows) {
+      const role = r.role === "user" ? "user" : "assistant";
+      let text = cipher.decOpt((r.raw_enc as string) ?? (r.text_enc as string)) ?? "";
+      if (role === "assistant") text = text.replace(/<show>([\s\S]*?)<\/show>/g, (_m, body) => `[showed ${/"type"\s*:\s*"([a-z_]+)"/.exec(body)?.[1] ?? "module"} ${/"key"\s*:\s*"([^"]+)"/.exec(body)?.[1] ?? ""}]`);
+      if (!text.trim()) continue;
+      const last = out[out.length - 1];
+      if (last && last.role === role) last.content = `${last.content as string}\n\n${text}`;
+      else out.push({ role, content: text });
+    }
+    while (out.length && out[0].role !== "user") out.shift();
+    return out;
+  }
+
+  // ---------------------------------------------------------------- directives
+
+  handleDirective(convId: string, d: Directive, sink: Sink, turnRef: { id: string | null }): void {
+    const { canvas, proposals, log } = this.svc;
+    try {
+      if (d.kind === "show") {
+        const r = canvas.show(convId, JSON.parse(d.body), "ava");
+        if (r.ok) sink({ type: "module", module: r.module });
+        else sink({ type: "module_error", key: null, errors: r.errors });
+      } else if (d.kind === "update") {
+        const r = canvas.update(convId, d.key, JSON.parse(d.body), "ava");
+        if (r.ok) sink({ type: "module", module: r.module });
+        else sink({ type: "module_error", key: d.key, errors: r.errors });
+      } else if (d.kind === "remove") {
+        canvas.remove(convId, d.key);
+        sink({ type: "remove", key: d.key });
+      } else if (d.kind === "propose") {
+        const raw = JSON.parse(d.body);
+        const list = (Array.isArray(raw) ? raw : [raw]) as unknown[];
+        const entries = list
+          .map((c) => ChangeSchema.safeParse(c))
+          .filter((r): r is { success: true; data: Change } => r.success)
+          .map((r) => ({ change: r.data }));
+        if (!entries.length) {
+          log.warn("canvas.invalid", "Ava proposed changes that failed validation", { body: d.body });
+          return;
+        }
+        const batch = proposals.createBatch("conversation", entries);
+        const m = canvas.show(convId, { key: `chips-${batch.batch_id.slice(-5)}`, type: "confirmation_chips", batch_id: batch.batch_id, title: "Changes to confirm" }, "ava");
+        if (m.ok) sink({ type: "chips", module: m.module });
+      } else if (d.kind === "style_note") {
+        this.addStyleNote(d.body, turnRef.id);
+        sink({ type: "style_note", text: d.body });
+      }
+    } catch (e) {
+      log.warn("canvas.invalid", `A ${d.kind} block could not be parsed: ${(e as Error).message}`, { body: (d as { body?: string }).body });
+      sink({ type: "module_error", key: null, errors: [(e as Error).message] });
+    }
+  }
+
+  /** Count affirmations in the last N assistant replies (for the budget). */
+  recentAffirmations(window: number): number {
+    const rows = this.svc.db.all<{ affirmation: number }>("SELECT affirmation FROM turns WHERE role = 'ava' ORDER BY created_at DESC LIMIT ?", [window]);
+    return rows.reduce((n, r) => n + (r.affirmation ? 1 : 0), 0);
+  }
+
+  /** Model-based check for subtler praise the patterns miss (async mode only). */
+  private async modelPraiseCheck(text: string): Promise<number[]> {
+    const { models, cfg } = this.svc;
+    const sentences = splitSentences(text);
+    if (sentences.length === 0) return [];
+    try {
+      const r = await models.complete({
+        purpose: "affirmation.check",
+        origin: "interactive",
+        model: cfg.models.fast,
+        maxTokens: 200,
+        schema: AffirmationCheck,
+        system: "You flag praise, compliments, affirmations or encouragement directed at the listener (e.g. 'great question', 'smart move', 'you're doing well', 'love this idea'). Agreement on substance ('you're right that X') and plain acknowledgement of a fact are not praise. Return the indices of sentences that are praise.",
+        messages: [{ role: "user", content: sentences.map((s, i) => `${i}: ${s}`).join("\n") }],
+      });
+      return r.parsed?.praise_sentence_indices.filter((i) => i >= 0 && i < sentences.length) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Apply the affirmation budget to a finished reply's words. */
+  async enforceBudget(text: string, opts: { useModel: boolean; operational: boolean }): Promise<{ text: string; affirmation: boolean; trimmed: boolean; regenerate: boolean }> {
+    const s = this.svc.settings.get().conversation;
+    const plain = parseScript(text).text;
+    const extra = opts.useModel && s.affirmation_model_check ? await this.modelPraiseCheck(plain) : [];
+    const decision = enforceAffirmationBudget(text, {
+      recentCount: this.recentAffirmations(s.affirmation_window),
+      max: s.affirmation_max,
+      operational: opts.operational,
+      completionAck: false,
+      extraSentences: extra,
+    });
+    if (decision.found.length) {
+      this.svc.log.info(
+        "affirmation.check",
+        decision.action === "keep" ? `Kept one affirmation within budget: "${decision.found[0]}"` : `Affirmation over budget (${decision.found.join(" | ")}); ${decision.action}`,
+        { found: decision.found, action: decision.action },
+      );
+    }
+    return { text: decision.text, affirmation: decision.found.length > 0 && decision.action === "keep", trimmed: decision.action === "trim", regenerate: decision.action === "regenerate" };
+  }
+
+  // ---------------------------------------------------------------- the async turn
+
+  async send(input: { text: string; input_kind: string; conversation_id?: string; speak?: boolean }, sink: Sink, signal?: AbortSignal): Promise<void> {
+    const svc = this.svc;
+    const { canvas, evidence, proposals, models, cfg, settings, log } = svc;
+    const convId = input.conversation_id ?? canvas.current();
+    const text = input.text.trim();
+    if (!text) throw new Error("Say or type something first");
+    const userTurn = this.saveTurn({ convId, role: "user", mode: "async", text, input_kind: input.input_kind });
+    sink({ type: "turn", turn: userTurn });
+    const evId = evidence.add({ kind: "transcript", source: "voice", content: text, summary: text.slice(0, 280), source_ref: userTurn.id });
+
+    // 1. Extraction first (Haiku), so the reply knows which chips are on screen.
+    let chipsLine = "";
+    if (models.available) {
+      sink({ type: "status", state: "extracting" });
+      try {
+        const changes = await extract(svc, text, { purpose: "conversation.extract", origin: "interactive", signal });
+        if (changes.length) {
+          const batch = proposals.createBatch(
+            "conversation",
+            changes.map((c) => ({ ...c, evidence_id: evId })),
+          );
+          const m = canvas.show(convId, { key: `chips-${batch.batch_id.slice(-5)}`, type: "confirmation_chips", batch_id: batch.batch_id, title: "From what you said" }, "extraction");
+          if (m.ok) sink({ type: "chips", module: m.module });
+          chipsLine = `Confirmation chips now on screen (key ${m.ok ? m.module.key : "?"}), from what he just said: ${batch.proposals.map((p) => p.summary).join("; ")}. Don't restate them; he'll accept or reject them.`;
+        }
+      } catch (e) {
+        log.warn("extraction.failed", `Extraction failed: ${(e as Error).message}`);
+      }
+    }
+
+    // 2. The reply (Sonnet, streaming).
+    const spoken = input.speak ?? settings.get().voice.autoplay;
+    sink({ type: "status", state: "thinking" });
+    const lg = lengthGuidance(text, spoken);
+    const turnRef = { id: null as string | null };
+    let raw = "";
+    const run = async (extraNote?: string) => {
+      raw = "";
+      const parser = new DirectiveParser(
+        (t) => sink({ type: "text", delta: t }),
+        (d) => this.handleDirective(convId, d, sink, turnRef),
+      );
+      const messages: Anthropic.MessageParam[] = [
+        ...this.history(convId, 12).slice(0, -1),
+        { role: "user", content: `${this.contextBlock(convId, text, spoken, [chipsLine, extraNote ?? ""].filter(Boolean))}\n\n${text}` },
+      ];
+      for (let round = 0; round < 3; round++) {
+        const res = await models.stream(
+          {
+            purpose: "conversation.reply",
+            origin: "interactive",
+            model: cfg.models.conversation,
+            maxTokens: lg.maxTokens,
+            effort: lg.kind === "quick" ? "low" : "medium",
+            system: this.systemBlocks(spoken),
+            messages,
+            tools: TOOLS,
+            signal,
+          },
+          (d) => {
+            raw += d;
+            parser.push(d);
+          },
+        );
+        if (res.stopReason !== "tool_use" || !res.toolUses.length) break;
+        messages.push({ role: "assistant", content: res.message.content as Anthropic.ContentBlockParam[] });
+        messages.push({
+          role: "user",
+          content: res.toolUses.map((t) => {
+            const key = (t.input as { key?: string }).key ?? "";
+            const m = canvas.get(convId, key);
+            return { type: "tool_result" as const, tool_use_id: t.id, content: m ? JSON.stringify(m.data) : `No module "${key}" on the canvas`, is_error: !m };
+          }),
+        });
+      }
+      parser.end();
+      return parser.text;
+    };
+
+    let words = await run();
+    let check = await this.enforceBudget(words, { useModel: true, operational: false });
+    if (check.regenerate) {
+      sink({ type: "replace_text", text: "" });
+      words = await run("Do not include praise or compliments in this reply.");
+      check = await this.enforceBudget(words, { useModel: false, operational: false });
+    }
+    const finalWords = check.text;
+    const display = parseScript(finalWords).text.trim();
+    if (finalWords !== words) sink({ type: "replace_text", text: display });
+    const avaTurn = this.saveTurn({ convId, role: "ava", mode: "async", text: display, raw: raw.replace(words, finalWords), affirmation: check.affirmation, trimmed: check.trimmed });
+    turnRef.id = avaTurn.id;
+    sink({ type: "done", turn: avaTurn });
+    sink({ type: "status", state: "idle" });
+
+    // 3. Speak it (word timestamps drive the reveal of canvas segments).
+    if (spoken && svc.voice.ttsAvailable("async") && display) {
+      try {
+        sink({ type: "status", state: "speaking" });
+        const audio = await svc.voice.renderAsync(finalWords, { purpose: "reply", operational: false });
+        if (audio) {
+          this.setTurnAudio(avaTurn.id, audio.audio_id, audio.cues);
+          sink({ type: "audio", audio_id: audio.audio_id, cues: audio.cues, duration_ms: audio.duration_ms });
+        }
+      } catch (e) {
+        log.warn("tts.failed", `Couldn't speak the reply: ${(e as Error).message}`);
+        sink({ type: "error", message: `Spoken reply unavailable: ${(e as Error).message}` });
+      } finally {
+        sink({ type: "status", state: "idle" });
+      }
+    }
+    void DateTime;
+  }
+}

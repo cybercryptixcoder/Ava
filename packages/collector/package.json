@@ -1,0 +1,16 @@
+{
+  "name": "@ava/collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local laptop activity collector for Ava. Samples the active window, merges into sessions locally, sends only sessions.",
+  "bin": { "ava-collector": "dist/collector.mjs" },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/collector.mjs --banner:js='#!/usr/bin/env node'"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15"
+  }
+}

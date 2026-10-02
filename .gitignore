@@ -1,0 +1,13 @@
+node_modules/
+dist/
+data/
+.env
+.env.local
+*.log
+coverage/
+test-results/
+playwright-report/
+personality/runs/*
+!personality/runs/.gitkeep
+.DS_Store
+packages/web/dev-dist/

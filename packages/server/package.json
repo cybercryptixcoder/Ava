@@ -1,0 +1,40 @@
+{
+  "name": "@ava/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "build": "node build.mjs",
+    "config:check": "tsx src/cli/config-check.ts",
+    "vapid": "tsx src/cli/vapid.ts",
+    "hash-password": "tsx src/cli/hash-password.ts",
+    "seed:test": "tsx src/cli/seed-test.ts",
+    "personality:test": "tsx src/cli/personality-test.ts",
+    "bench:voice": "tsx src/cli/bench-voice.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "@ava/shared": "*",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.5",
+    "@fastify/websocket": "^11.3.1",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "dotenv": "^18.0.5",
+    "fastify": "^5.12.5",
+    "fflate": "^0.8.3",
+    "luxon": "^3.7.2",
+    "node-ical": "^0.27.2",
+    "web-push": "^3.6.7",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.6",
+    "@types/web-push": "^3.6.4",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15"
+  }
+}
