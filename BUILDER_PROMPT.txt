@@ -1,0 +1,253 @@
+AVA: COMPLETE BUILDER BRIEF
+==========================
+
+You are continuing work on Ava, a self-hosted proactive personal agent. This file contains (1) everything the owner has asked for, in full detail, (2) what is already built and pushed, (3) exactly what remains, and (4) the conventions and context you need. Read it all before changing anything.
+
+Repository: https://github.com/cybercryptixcoder/Ava
+Working branch: claude/ava-personal-agent-3golwn (all work so far is pushed there; there is no main branch yet).
+Git rules: develop and commit on that branch; push with `git push -u origin claude/ava-personal-agent-3golwn`; retry pushes on network errors with backoff (2s, 4s, 8s, 16s); do NOT open a pull request unless the owner explicitly asks; do not include model identifiers in commits, PRs, code comments or other pushed artifacts.
+
+Before you start: read CLAUDE.md, AGENTS.md, BACKLOG.md, README.md, HANDOFF.md, docs/architecture.md and docs/design-plan.md in the repo. Keep the test suite green throughout (`npm test`, `npm run typecheck`, `npm run build`, `npm run test:e2e`).
+
+
+PART A. WHO THE OWNER IS
+========================
+
+Shreyas. A CS student splitting time between Penn State (State College, America/New_York) and Bangalore (Asia/Kolkata). Thinks out loud and dictates a lot (uses Wispr Flow). Cares a lot about aesthetics. Tends to do all the preparation for something and then stall at the final step, so helping him FINISH matters more than helping him start. Gets overwhelmed when shown everything at once: Ava's whole purpose is to take the overwhelm out of his head.
+
+
+PART B. THE ORIGINAL SPECIFICATION (FULL DETAIL)
+================================================
+
+Build Ava as a proper GitHub repo (clear structure, documented, readable, tested). Every feature must actually work end to end once API keys are added: no placeholders, mocks in real code paths, TODO stubs or faked data.
+
+B1. Configuration
+- `.env.example` listing every key with a one-line comment (what it is, where to get it).
+- Real environment variables take precedence over `.env`.
+- Startup config check reporting present and missing keys and which features are disabled as a result.
+- A missing optional key disables only its own feature.
+
+B2. Core principle
+- The intelligence plans ahead; the SYSTEM owns time, triggers, execution and enforcement.
+- Nothing runs continuously.
+- Every proactive message comes from a rule plus cited evidence.
+- Ava returns wake requests as structured output, validated by a deterministic scheduler.
+- Execution is done by fresh executor sessions that report plan-fit.
+- Two-tier rules: a fixed constitution plus dynamic rules that need approval.
+
+B3. Constitution, enforced in code
+- Validator: cited IDs must exist; "because" lines must match stored state; failures are logged.
+- No invented states of mind.
+- Caps: morning brief plus at most 3 unprompted messages per day; quiet hours 23:00 to 08:00; nothing during class or exam blocks.
+- Limits on dynamic rules (they can never raise caps, change quiet hours, edit the constitution, approve themselves, take external actions, or schedule beyond the wake budget).
+- Explicit confirmation of every external action, each time, showing exactly what will be sent and to whom.
+- Expiries and on/off switches on every dynamic rule.
+- System-owned heartbeat and dead-man's switch.
+- Daily model-call budget.
+- Everything logged.
+
+B4. Wakes
+- Heartbeat every 3 hours (with lookahead that schedules precise wakes, e.g. 5 minutes after class ends).
+- Scheduled wakes: deadlines at 14/3/1 days out; morning brief 08:30; evening plan 21:30; Sunday weekly review; executor sessions; validated planner requests.
+- Event wakes (changes coalesce into one wake).
+- An 8-step wake procedure: pull, update state, evaluate rules into candidates, internal actions, rank and draft with placeholders, validate, dispatch, record.
+- Time-zone toggle (State College / Bangalore) recomputes all schedules.
+- Dead-man alert after 6 waking hours without a successful wake.
+
+B5. Rules
+- Built-in: deadline horizon, free block, finish line (drafted/almost done 2+ days), stale project (important, untouched a week), follow-up (overdue commitment or reply owed).
+- Dynamic rules: structured DSL with evidence, condition, action, expiry, approval tier, live stats.
+- Shadow mode (replay over stored snapshots before approval).
+- Self-pausing at precision below 0.4 after at least 5 messages.
+- Caps of about 3 new rules per week and about 15 active.
+
+B6. Life model
+- Raw evidence separate from beliefs. Beliefs have provenance (stated, observed, inferred), confidence, evidence links, last confirmed, decay; inferred beliefs stay proposals until confirmed.
+- Item types (task, project, commitment, open loop, goal, preference, saved item, event, rhythm), extensible schema.
+- Active sensing: one question at a time when an unknown matters.
+- Confirmation chips (now being replaced by auto-filing, see Part C).
+- Check-off is immediate and cancels related wakes.
+
+B7. Sources (plugin interface, each with on/off)
+- On: voice/conversation, Google Calendar (OAuth, change notifications), ICS feeds, manual entry, ChatGPT/Claude export import (tolerant, date-weighted review queue).
+- Off by default: Gmail sent mail only (extract HIS commitments and nothing about other people beyond what the commitment needs); laptop activity collector (local merge, sends sessions only); saved-items import; Wispr Flow via its official MCP server (never reuse the desktop app's session; if not possible, note it in the handoff).
+- Staged compression for high-volume data.
+
+B8. Executors
+- Fresh sessions, produce artifacts (practice set, summary, draft, outline, plan), multi-session via the scheduler, never send anything externally.
+
+B9. Reaching out
+- Installable PWA, web push with action buttons, extensible channel layer.
+- Message anatomy: first line is the point; a "because" line; 2 to 4 options; do it / not now / already done / less of this.
+- (Original) morning brief spoken in under a minute plus screen. NOTE: Part C replaces this with the morning stack.
+
+B10. Voice
+- Async mode: big auto-expanding input, single-action send, paste, audio upload transcription, spoken replies with an autoplay setting.
+- Live mode: WebRTC/WebSocket streaming, streaming STT with custom vocabulary, semantic end-of-turn with patience (he thinks out loud), barge-in, streaming LLM to streaming TTS, prompt caching, under about 800 ms latency measured in a dev panel, no fillers.
+- TTS evaluation, word-level timestamps, tone control, same voice across modes, adapter layer, voice audition screen; speech adaptation.
+
+B11. Interface (original; Part C changes the main screen)
+- Typed, validated module vocabulary, in-place updates, speech-synced reveal, Ava knows canvas state.
+- Screens: Today, Talk, Tasks and projects, Rules, What Ava knows, Messages, Log, Settings (sources, time zones/quiet hours, caps/budgets, voice audition, style notes, dev panel: latency, time simulation, model usage); first-run 5-step setup.
+
+B12. Look and feel
+- Vintage chronograph dial restraint. Dark theme first-class, automatic by local time plus override. Deliberate typography with tabular figures. Functional motion only; reduced-motion respected. Presence shown by a quiet indicator.
+- AVOID the generic AI look: no orbs, gradient blobs, sparkle icons, purple-blue gradients; no cream plus terracotta; no near-black plus neon accent; no identical rounded-card grids with shadows; no all-caps eyebrow labels; no monospace small labels; no middle-dot metadata strings; no arrows on buttons; no chat-bubble-only layouts.
+- Writing rules: sentence case, specific, no apologies. Responsive, keyboard accessible, good contrast.
+- Process: write a design plan first, review/revise it, build, then screenshot every screen on phone and desktop in both themes, critique, iterate, commit final screenshots.
+
+B13. How Ava talks
+- Personality files; affirmation post-check budget (at most 1 per about 10 exchanges, none in operational messages unless acknowledging a real completion); length scales with input; style notes; a test set (long rant, idea discussion, quick update, bad-news day, him being wrong, live exchange) re-run whenever the voice files change, compared as text and audio.
+
+B14. Models
+- Planning and weekly review: claude-opus-5-5. Async conversation: claude-sonnet-5-5. Live: claude-sonnet-5-5 default with claude-haiku-4-5-20251001 option. Extraction, labeling, ranking, affirmation check: claude-haiku-4-5-20251001. Prompt caching and streaming.
+
+B15. Security and privacy
+- Single-user password plus secure sessions; tunnel deployment plus local instructions; secrets only in environment variables; encrypt sensitive data at rest; retention deletion of raw high-volume data; other people's data used only to extract his own commitments; export everything and delete per source.
+
+B16. Repo requirements
+- One-command local and production start; README; architecture doc; design plan plus screenshots; tests (rule evaluation, scheduler validation, validator, caps, dedupe, time-zone switching, affirmation budget, module schema; end-to-end: brain dump to confirmed items, wake to validated message, accepted suggestion to executor artifact, dynamic rule proposal to shadow to approval); a test profile with fixtures kept strictly separate; a time-simulation tool; a voice pipeline benchmark.
+- HANDOFF.md: what was built/verified, setup steps (keys, OAuth, PWA, collector), external limitations, judgment calls, next improvements.
+
+
+PART C. THE REDESIGN REQUEST (THE OWNER'S LATEST INSTRUCTIONS, IN FULL)
+======================================================================
+
+"To conserve usage, read only the files you need for each part below, and don't re-explore the whole codebase. This task has four parts. Do them in order, commit each separately, and keep the existing test suite green throughout."
+
+WHY THIS CHANGE
+The current interface overwhelms him, and that defeats Ava's purpose. Ava exists to take the overwhelm out of his head. Right now she shows everything: eight screens, multiple timelines, accept/reject on every extracted item, five response buttons on every message, a paragraph-long morning brief. Seeing everything laid out at once is exactly what overwhelms him.
+
+The new principle: THE MAIN SCREEN SHOWS AVA'S JUDGMENT, NOT HER DATABASE. The full data (every task, rule, belief and log entry) still exists, but lives in a back room. The front room shows only what she has concluded he needs right now, one thing at a time. If he ever has to scan, sort or compare on the main screen, Ava hasn't done her job.
+
+PART 1: CI  [DONE]
+GitHub Actions workflow on every pull request and every push to main: clean install (npm ci) on the repo's Node version; type check; tests; build; screenshots of the main screens at phone and desktop sizes in both themes using the existing screenshot tooling, uploaded as artifacts. Cache dependencies; run independent steps in parallel. Tell the owner exactly how to turn on branch protection so PRs can't merge unless CI passes (he will do it himself).
+
+PART 2: WORKFLOW FILES  [DONE]
+Two agents develop the repo from here: a cheaper coding model implements and opens PRs; Claude Code reviews diffs, fixes what's wrong and merges.
+- CLAUDE.md (for the reviewer, concise): what Ava is in one paragraph; core architecture principles (planner vs system vs executors, the constitution, the wake procedure, the validator, dynamic rules with approval), summarized with a link to docs/architecture.md; the interface principles; review procedure: review the PR's diff not the whole codebase; check against the principles and AGENTS.md; confirm CI is green; for UI PRs look at the screenshot artifacts; fix small issues directly and merge, comment on large ones; whenever correcting a mistake the implementer is likely to repeat, add a one-line rule to the Lessons section of AGENTS.md in the same PR.
+- AGENTS.md (for the implementer): one concern per PR, branch per task, PRs ideally under about 400 changed lines; CI first (run tests, type check, build locally before opening a PR; not ready until CI is green; never claim tests pass without running them); UI PRs must include screenshots; code rules (match existing structure, types required, no dead code, no placeholder implementations); interface rules (design tokens only, no new colors/sizes/fonts outside the token system; never show internal identifiers or type names in the UI like `open_loop` or `task`; no horizontal overflow at any width; respect the main-screen principle, nothing new on the main page without a strong reason); boundaries (never modify the constitution, the validator or the scheduler's budget checks without flagging it prominently in the PR description); an empty Lessons section at the end.
+- .github/pull_request_template.md: what changed, why, how it was tested, screenshots (UI), any constitution or validator changes.
+- BACKLOG.md: the initial tasks from Part 5.
+
+PART 3: AGENT BEHAVIOR FOR THE CARD STACK  [SERVER DONE; see Part D for details]
+Threads: Ava groups items into a small number of top-level threads (e.g. "Midterm week", "Finish the SOP", "OS project"). A thread contains tasks, deadlines, commitments and open loops; subtasks nest under tasks. Ava maintains grouping herself as items arrive, using the existing extraction and planning paths. He can rename, merge or split threads by voice or text. Default about 7 active threads at most; if more, Ava groups further rather than showing more.
+Cards: one thing that needs him, not one database item. Three kinds: Do (an action, e.g. the next step on a thread), Pick (a decision with 2 to 4 options), Know (a heads-up needing no action). Three layers, generated lazily only when opened: (1) one line saying what it is plus a short "why now"; (2) the thread's 3 to 5 relevant parts, or the options in detail; (3) the work itself or full detail: an executor artifact, a draft, notes.
+The stack: an endpoint returning the current stack; priority-ordered by Ava using the existing rules, candidates and ranking logic; short and finite (about 5 cards on a normal day by default, configurable); when empty, an "all clear" state with Ava's next planned check-in; proactive messages that pass the validator become cards in the stack instead of separate message objects (constitution and validator unchanged).
+Responses: Right/yes = do it or start it (spawn the executor if the card offers work). Left/not now = card leaves and comes back later; Ava decides when, no sooner than a configurable minimum delay; nothing is ever deleted by a swipe. Already done = updates state immediately and cancels related wakes. Stop suggesting this = the existing "less of this" cooldown. Already done and stop suggesting this are reached by long-press or by saying so, NOT as visible buttons.
+Auto-filing with undo: when he talks, Ava files what he stated directly instead of asking him to accept each item; she asks first only when genuinely ambiguous or consequential (an inferred deadline, anything involving another person, anything external). After a brain dump the result is one Know card, e.g. "Filed 6 things, 1 needs you"; opening it shows what was filed with undo per item. Anything that still needs him gets its own card. Inferred (not stated) beliefs stay proposals but surface at most occasionally, as Pick cards, never as a list.
+Fewer approvals: dynamic rule proposals no longer have their own approval surface on the main page; a rule that can message him and needs approval becomes a Pick card, at most about one a week, with the shadow-mode result as layer 2.
+The brief is the stack: replace the written morning brief with the morning stack. If he opens Ava in the morning, the optional spoken version is a few sentences at most and points to the cards; it doesn't recite the day.
+Quieter notifications: push only for time-sensitive cards (default cap 2 per day); text is just the card's one line. Everything else waits in the stack.
+
+PART 4: THE NEW MAIN PAGE  [NOT STARTED: THIS IS YOUR MAIN JOB]
+Build the main page as the foundation the rest of the interface will follow.
+Layout:
+- Top: nearly empty. At most the time and a way to open the menu.
+- Center: the card stack. One card fully visible, with the next one or two peeking out behind it so he senses depth without seeing content.
+- Bottom: a well-designed bar with a prominent mic button and a text field, with the existing live-mode entry folded in cleanly.
+- Generous white space everywhere. The page should feel calm.
+Interaction:
+- Touch: swipe right for yes, swipe left for not now, tap to go one layer deeper (card expands in place or becomes a focused sheet; back returns to the stack), long-press for already done and stop suggesting this.
+- Desktop: two clear buttons on the card, plus arrow keys and Enter.
+- Every swipe gives clear but restrained feedback; the next card settles in smoothly.
+- Respect reduced-motion settings.
+Talking: when he speaks or types, Ava replies by voice (if speech is on) with a short text version. The result shows up as changes to the stack, not as a canvas of modules. The conversation transcript is available in a sheet he can pull up, but not on the main page by default.
+Secondary views, one tap away:
+- Calendar: a clean day and week view; his calendar plus Ava's planned check-ins, nothing else.
+- Everything: the full hierarchy (threads, then items, then subtasks), collapsed by default so even this view isn't a wall.
+The back room: Rules, What Ava knows, Messages history, Log and Settings all move behind a single menu. Keep them working; restyling is backlog work. Remove the current eight-item navigation.
+Design foundation: keep the craft (typography, careful treatment of time) but remove most of the density. Define or update design tokens and build the card component, stack, gestures and input bar as reusable pieces later work builds on. Keep avoiding the generic AI-product look (list in B12). The main page should be the best-looking thing in the app.
+Before finishing: run the app on the test profile, take screenshots of the main page at phone and desktop sizes in both themes (stack with cards, an opened layer, and the all-clear state), critique them honestly against this section, and fix what falls short.
+
+PART 5: BACKLOG  [WRITTEN to BACKLOG.md]
+1. Check whether ChatGPT export import loses message text when content is stored in `parts`; add a test; fix if so.
+2. Check whether recurring ICS events collapse into a single occurrence; add a test; fix if so.
+3. Restyle the back-room screens to the new design tokens, one screen per PR.
+4. Polish the Calendar and Everything views.
+5. Make sure no screen overflows horizontally at 320 px wide, with a test enforcing it.
+
+WHEN DONE
+Update HANDOFF.md and docs/architecture.md for the new stack model. Then give the owner a short summary covering: what changed; how to turn on branch protection; anything decided that he should review.
+
+
+PART D. CURRENT STATE OF THE SYSTEM
+===================================
+
+Commits on the branch (newest first):
+- 830af02 Card stack on the server: threads, auto-filing with undo, the stack, quieter push  (Part 3)
+- c444ca8 Workflow files for the implementer and the reviewer  (Part 2)
+- aed24e0 CI: type check, tests, build, UI tests and screenshots  (Part 1)
+- 310af1d and earlier: the original full build (see HANDOFF.md)
+
+Test status at last commit: 82 Vitest tests passing (15 files), type check clean across all packages. Playwright UI tests (8) passed before Part 3; re-run them after any UI change (they target the OLD UI and must be updated in Part 4).
+
+D1. Tech stack and layout
+- TypeScript npm-workspaces monorepo, Node >= 22.13 (uses node:sqlite), `.nvmrc` = 22.
+- packages/shared: zod schemas and pure logic (items, changes, rule DSL, canvas vocabulary, time, speech, API view types incl. CardView/StackView/ThreadNode).
+- packages/server: Fastify 5, SQLite, scheduler, rules, validator, wake procedure, planner, executors, conversation, sources, voice, push. CLI tools in src/cli. Bundled by build.mjs (esbuild).
+- packages/web: React 19 + Vite PWA. Screens in src/screens, components in src/components, canvas modules in src/modules, styles in src/styles (tokens.css + app.css), service worker public/sw.js.
+- packages/collector: laptop activity collector CLI.
+- personality/: voice, spoken, operational, examples, audition, test set.
+- docs/: architecture.md, design-plan.md, screenshots/.
+- scripts/: dev.mjs (one-command dev), screenshots.mjs, icons.mjs.
+- Commands: `npm run dev` (real profile, web :5173, api :4317); `npm run dev:test` (test profile, simulated clock, web :5174, api :4318); `npm test`; `npm run typecheck`; `npm run build`; `npm run test:e2e`; `npm run screenshots -- --base=http://127.0.0.1:4318 [--only=name] [--out=dir]`; `npm start` / `start:prod`; Docker: `docker compose --profile tunnel up -d`.
+- Test helpers: packages/server/test/helpers.ts (makeApp: in-memory DB, SimClock, all external keys forced off; ScriptedProvider: answers model calls by purpose). Tests never touch the network.
+
+D2. Original build: done (see HANDOFF.md for full detail)
+Everything in Part B is implemented: life model, scheduler with all wake kinds and TZ switching, dead-man switch, rules (constitution, built-ins, DSL, shadow, stats, self-pause, caps), validator, dispatcher, planner (evening, weekly, new context), executors, external actions with confirmation, conversation with affirmation budget and style notes, voice (ElevenLabs/Cartesia TTS, Deepgram/AssemblyAI STT, live mode, audition, benchmark), sources (gcal, ICS, manual, chat import, Gmail sent, Wispr MCP, saved items, collector), PWA with all original screens, password auth, encryption at rest, retention, export, Docker + Cloudflare tunnel, CI. NOT verified against real services (no keys were available): Anthropic, ElevenLabs/Cartesia/Deepgram/AssemblyAI, Google OAuth/Calendar/Gmail, Wispr MCP endpoint (URL https://api.wisprflow.ai/connect/mcp unconfirmed), real web push, live latency.
+
+D3. Part 3 server implementation (done)
+- Migration 2 (packages/server/src/db/schema.ts): items.thread_id, items.parent_id; tables `threads` and `cards`; proposals.auto and proposals.undo.
+- Shared: Item has thread_id and parent_id; ItemDraft accepts them; ChangeSchema adds rename_thread, merge_threads, move_to_thread and create_item.thread_title; Proposal status adds "undone"; api.ts adds ThreadNode, CardKind, CardOption, CardView, FiledEntry, CardLayer2, CardLayer3, CardResponse, CardResult, StackView.
+- Settings (config/settings.ts): stack {max_cards 5, min_return_minutes 180, rule_card_every_days 7, belief_card_every_days 4}; threads {max_active 7}; notifications {push_per_day 2}.
+- ThreadStore (state/threads.ts): resolve/place (named hint, then parent, project, course, "People to get back to", "Loose ends"), assign, rename, merge, move (split = move to a new title), nest, snapshot/restore for undo, enforceCap (courses grouped under "Coursework", then smallest under "Smaller things"), backfill (run at app start), tree() for the Everything view (projects that named the thread are not listed inside it).
+- Filing (state/filing.ts): needsYou() rules (commitments/open loops/to_person = "involves someone else"; not stated = inferred; inferred beliefs held as proposals); file() auto-applies the rest with an Undo record, creates Pick cards for needs-you items and one Know filing card; undo(proposalId).
+- CardStore (cards/cards.ts): producers fromMessage, forProposal, forFiling, forRuleApproval (max 1 per 7 days), forBelief (max 1 per 4 days), forQuestion, forArtifact, forAction (never sends; "yes" returns open:action for the confirm sheet), forReview; refreshPeriodic; stack() with scoring (priority, +100 time-sensitive, +150 fresh filing/proposal, -15 per return), expiry, snooze return; nextMorning(); layer2/layer3 built from current state (no model calls); respond(yes/not_now/already_done/stop); returnTime (next check-in after the minimum delay; after 2 returns, next morning stack; never in quiet hours); closeForItem; closeRef; pushIfDue (time-sensitive only, cap per day, body empty, one line title).
+- Dispatcher (wake/dispatcher.ts): caps unchanged; "sent" messages become visible cards (pushed only if time-sensitive and under the push cap); "queued" messages become cards visible at the next morning stack.
+- Brief (planner/brief.ts): compose() is now the morning stack: drops stale queued messages, marks the rest in-brief, adds the question card and periodic cards, writes a few-sentence spoken line via morningWords(), pre-renders audio, no push.
+- Planner: PlanOutput has `threads` (regroup); weekly review becomes a Know card (no push); proposed messaging rules get a Pick card via forRuleApproval; context lists threads.
+- Extraction: new fields stated, thread, parent_item_id, thread_id, other_thread_ids, item_ids, new_title; thread ops; context lists threads.
+- Conversation: STACK_PROTOCOL replaces CANVAS_PROTOCOL (short replies, results go to the stack, <propose> and <style_note> only); extraction results go through Filing; emits TalkEvent {type:"filed", filed, needs_you}; live mode does the same.
+- Executors: finished user-requested work creates a Know card (no push).
+- ChannelHub: pushCard() replaces message delivery; payload carries card_id; actions "yes" and "not_now". sw.js posts those to /api/cards/:id/respond.
+- Routes (http/routes-stack.ts): GET /api/stack; GET /api/cards/:id/layer/2 and /3; POST /api/cards/:id/respond {response, option}; POST /api/filings/:id/undo; GET /api/threads; POST /api/threads/:id/rename; POST /api/threads/merge {thread_ids, into}; POST /api/threads/move {item_ids, thread_id? | title?}. Message responses from the history screen and action confirm/cancel close their cards.
+- Test profile seed: the brain dump now goes through Filing (3 filed, 1 needs you: the I-20 commitment), the practice set is a Know card. The seeded stack: filing Know card, I-20 Pick, then Do cards for PS5, SOP, recommender packets (7 more waiting).
+- Tests: packages/server/test/stack.test.ts (threads, grouping cap, rename/merge/split with undo, queued vs sent cards, short stack and all clear, not now/already done/stop/never deleted, push cap and one-line text, morning stack, rule approval weekly card with shadow layer, belief cadence) and the rewritten brain-dump test in e2e.test.ts.
+
+D4. What is NOT done (your work)
+1. PART 4 IN FULL. The web app still shows the old eight-item navigation, Today dial, Talk canvas, and chips; it builds, but nothing in the UI uses /api/stack yet. Build:
+   - New main page at "/" (replace Today/Talk as the front room): nearly empty top (time + menu), card stack center (one card visible, 1 to 2 peeking behind, no content visible on them), bottom input bar (prominent mic, text field, live mode folded in; reuse lib/live.ts LiveClient, Escapement indicator, and the existing /api/talk streaming + /api/talk/audio upload; handle the new "filed" TalkEvent; Ava's short text reply shown briefly; speech when autoplay is on).
+   - Reusable components: Card (kind-aware, layer 1 content, two desktop buttons using options[0] label for yes and "Not now"), Stack (peek depth, settle animation), gesture handling (pointer events: swipe right yes, left not now, tap to open layer, long-press menu with "Already done" and "Stop suggesting this"; keyboard: Left/Right arrows, Enter opens layer, Escape closes), Layer sheet (layer 2 parts/options/filed list with Undo buttons calling /api/filings/:id/undo, shadow result for rules; layer 3 artifact via existing ArtifactView, external action via existing ConfirmSend sheet, rule sentence and evidence), All-clear state ("Nothing needs you" plus next check-in time), morning spoken line (play via existing /api/brief/:id/speak).
+   - Pick cards: show the 2 to 4 options as choices (yes = chosen option key).
+   - Card result handling: result.open {kind:"action"} opens ConfirmSend; {kind:"artifact"} opens the artifact; show result.summary as a restrained toast; refresh stack from the response's `stack`.
+   - Push deep link: sw.js opens "/?card=<id>"; focus that card.
+   - Transcript sheet (pull-up) using /api/canvas turns or a lighter endpoint; not on the main page by default.
+   - Calendar view (day + week): his calendar events plus Ava's planned check-ins only. Server: add an endpoint (e.g. GET /api/calendar?date=&days=) returning events and pending wakes (exclude event/executor kinds; heartbeats optional), or reuse existing timeline hydration in canvas/hydrate.ts. File names expected by BACKLOG.md: packages/web/src/screens/Calendar.tsx and packages/web/src/screens/Everything.tsx.
+   - Everything view: GET /api/threads tree, collapsed by default, threads then items then subtasks, rename/merge/move affordances optional (endpoints exist).
+   - Back room behind ONE menu: Rules, What Ava knows, Messages, Log, Settings (keep existing screens working). Remove the eight-item nav and the bottom tab bar. Remove Today and Talk screens and dead code they leave (e.g. /api/today + views.todayView if unused, canvas UI modules if unused); keep first-run setup working (it currently finishes into /talk; point it to /).
+   - Design tokens: update tokens.css (keep Archivo for UI/data with tabular figures, Newsreader for Ava's words, steel accent = Ava's, light "enamel dial" and dark "night dial" themes, auto theme by local time with override); add spacing/size tokens the calm layout needs; never hard-code new values.
+   - Motion: restrained swipe feedback (card follows finger, slight tilt at most, color/label hint of yes/not now), next card settles; prefers-reduced-motion = instant.
+   - No internal identifiers in UI, sentence case, no horizontal overflow down to 320 px, keyboard and focus rings.
+   - Update scripts/screenshots.mjs SCREENS for the new routes (main stack, opened layer, all-clear, calendar, everything, menu screens) and update packages/web/e2e/app.spec.ts for the new UI (swipe/keyboard yes and not now, open layer, undo a filing, back-room menu). CI uploads screenshots from these.
+   - Produce and critique screenshots (phone 390 and desktop 1440, light and dark): stack with cards, opened layer, all-clear. To get all-clear on the test profile, answer the cards or advance the clock (Settings > Developer > time simulation, or POST /api/dev/clock/advance).
+2. docs/architecture.md: add the stack model (threads, cards, layers, responses, filing, morning stack, quieter push). HANDOFF.md: replace the "Status at pause" section with the final state; also update README screenshots and the "How it works" bits that mention the brief, chips and canvas.
+3. Commit Part 4 separately; then docs; push.
+4. Final summary to the owner: what changed, branch protection steps (below), decisions to review (below plus any new ones).
+
+D5. Branch protection instructions for the owner (already given once; repeat in the final summary)
+The repo has no main branch yet: create `main` from this branch and set it as the default (Settings > General). Then Settings > Branches > Add rule (or Rules > Rulesets) for `main`: enable "Require a pull request before merging"; enable "Require status checks to pass before merging" and "Require branches to be up to date"; add the required checks "Type check", "Tests", "Build", "UI tests and screenshots" (they appear after CI has run once); optionally "Do not allow bypassing the above settings".
+
+D6. Decisions already made that the owner should review
+- The daily cap of 3 unprompted messages still counts new cards, not just pushes; queued/over-cap cards appear in the next morning stack.
+- Commitments and open loops (and anything with a person) always ask first, even when stated outright.
+- Card layers 2 and 3 are built from stored state without model calls; opening layer 3 shows existing work and detail but does not start new work.
+- The server canvas protocol code remains (no longer used on the main page); remove once Part 4 lands if unused.
+- One message per wake and nothing before the morning stack (from the original build).
+- "Already done" doesn't count as acting on a nudge for rule precision.
+
+D7. Conventions (from AGENTS.md / CLAUDE.md)
+- Small single-concern changes; types required; no dead code; no placeholders or fake data outside fixtures/tests; log every decision Ava makes to svc.log.
+- Never change the constitution, the validator, the scheduler's budget/quiet-hour checks, the dispatcher's caps, auth, encryption or retention without flagging it prominently.
+- Never add a path that sends, submits or spends anything without the existing explicit-confirmation flow.
+- Commit messages end with the session's attribution lines if your environment provides them; never include model identifiers.
