@@ -1,0 +1,9 @@
+{
+  "title": "A long rant",
+  "mode": "async",
+  "context": "Open items: CMPSC 465 Quiz 4 (shortest paths, MSTs) due Monday 10:10, not started. Statement of purpose: drafted for 4 days. Commitment: send Riya the robotics slides, due yesterday. OS Project 2 started, due in 14 days. Project 'Robotics club: line follower' untouched 9 days. Calendar today: CMPSC 473 13:35-14:50. He works best 21:00-00:30 (stated).",
+  "turns": [
+    { "role": "user", "text": "okay so a lot is going on. the 465 quiz is monday and I haven't really started, it's shortest paths and MSTs, I keep telling myself I'll do practice problems but then I end up re-reading the slides which doesn't help. also I told Riya I'd send her the robotics slides yesterday and I completely forgot. the SOP is basically done, it's been sitting there drafted for days, I just need to do the final read but I keep not doing it. OS project two is going okay, I got the parser working, the job control part is going to be annoying though because of the signal handling. and honestly I'm not sure the line follower thing is worth my time this semester, maybe I should hand it off to one of the sophomores, they seem into it. oh and I need to get the I-20 signed before winter break, the office is only open weekdays till four, so that's a whole thing with my schedule" }
+  ],
+  "expect": ["Picks one thread to go deeper on", "At most one question", "Puts list-like detail on the canvas"]
+}

@@ -37,7 +37,23 @@ export class BriefComposer {
     const date = local.toISODate()!;
     if (db.get("SELECT id FROM briefs WHERE date = ?", [date])) return "brief already composed today";
 
-    const queued = messages.queuedForBrief();
+    // Queued messages: drop stale ones (older than a day and a half, or about items now closed) and duplicates.
+    const seenKeys = new Set<string>();
+    const queued = messages.queuedForBrief().filter((m) => {
+      const stale = now.getTime() - new Date(m.created_at).getTime() > 36 * 3_600_000;
+      const closed = m.cited.length > 0 && m.cited.every((c) => {
+        const it = items.get(c.id);
+        return !it || ["done", "dropped", "closed", "cancelled"].includes(it.status);
+      });
+      const key = `${m.rule_id}:${m.cited.map((c) => c.id).join(",")}`;
+      const dup = seenKeys.has(key);
+      seenKeys.add(key);
+      if (stale || closed || dup) {
+        db.run("UPDATE messages SET status = 'dropped', block_reason = ? WHERE id = ?", [stale ? "stale by brief time" : closed ? "items already done" : "duplicate", m.id]);
+        return false;
+      }
+      return true;
+    });
     const question = questions.open();
     const proposals = rules.list().proposed;
     const lastBrief = db.get<{ created_at: string }>("SELECT created_at FROM briefs ORDER BY created_at DESC LIMIT 1");
@@ -148,7 +164,7 @@ export class BriefComposer {
         .then((audio) => audio && db.run("UPDATE briefs SET audio_id = ? WHERE id = ?", [audio.audio_id, id]))
         .catch((e) => log.warn("brief.tts_failed", `Couldn't pre-render brief audio: ${(e as Error).message}`));
     }
-    await svc.channels.notify(firstLine, "Your morning brief is ready.", "/today?brief=1", id);
+    await svc.channels.notify(firstLine, "Your morning brief is ready.", "/today?brief=1", id, wakeId);
     svc.bus.emit({ type: "brief.ready", brief_id: id });
     log.info("brief.composed", `Morning brief composed (${draftedBy.replace("_", " ")}): ${firstLine}`, { brief_id: id, queued: queued.length, question: question?.id ?? null }, wakeId);
     return `brief composed (${queued.length} queued messages, ${proposals.length} rule proposals)`;

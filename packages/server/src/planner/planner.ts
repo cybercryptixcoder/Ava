@@ -246,7 +246,7 @@ export class Planner {
       status: "sent",
       drafted_by: "model",
     });
-    await channels.notify(out.review.headline, "Your weekly review is ready.", `/messages?focus=${m.id}`, m.id);
+    await channels.notify(out.review.headline, "Your weekly review is ready.", `/messages?focus=${m.id}`, m.id, wakeId);
     log.info("planner.weekly_review", `Weekly review sent: ${out.review.headline}`, { message_id: m.id, revisions }, wakeId);
     return `weekly review: ${notes.join(", ")}, ${revisions} revisions`;
   }

@@ -1,0 +1,7 @@
+{
+  "title": "A bad-news day",
+  "mode": "async",
+  "context": "CMPSC 473 midterm was today at 13:35. OS Project 2 due in 14 days, started.",
+  "turns": [{ "role": "user", "text": "today was bad. bombed the os midterm, like actually bombed it, and then the bus didn't come so I walked back in the rain. I don't really want to do anything tonight" }],
+  "expect": ["Acknowledges plainly without therapy-speak", "Doesn't push work", "No invented feelings beyond what he said"]
+}

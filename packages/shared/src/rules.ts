@@ -330,17 +330,30 @@ function valueWords(v: unknown): string {
   return String(v);
 }
 
+/** 19.5 → "7:30 pm", for hour-of-day fields. */
+function hourWords(v: unknown): string {
+  if (typeof v !== "number") return valueWords(v);
+  const h = Math.floor(v) % 24;
+  const m = Math.round((v - Math.floor(v)) * 60);
+  if (h === 0 && m === 0) return "midnight";
+  if (h === 12 && m === 0) return "noon";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "am" : "pm"}`;
+}
+
 export function describeCondition(cond: Condition): string {
   if ("all" in cond) return cond.all.map(describeCondition).join(" and ");
   if ("any" in cond) return `(${cond.any.map(describeCondition).join(" or ")})`;
   if ("not" in cond) return `not (${describeCondition(cond.not)})`;
   const f = fieldWords(cond.field);
-  if (cond.op === "between" && Array.isArray(cond.value)) return `${f} is between ${valueWords(cond.value[0])} and ${valueWords(cond.value[1])}`;
+  const clock = cond.field === "now.local_hour";
+  const words = clock ? hourWords : valueWords;
+  if (cond.op === "between" && Array.isArray(cond.value)) return `${clock ? "it's" : `${f} is`} between ${words(cond.value[0])} and ${words(cond.value[1])}`;
   if (cond.op === "eq" && typeof cond.value === "boolean" && /^(calendar\.in_|now\.is_|item\.fits)/.test(cond.field)) {
     return cond.value ? f : `not ${f}`;
   }
   if (cond.op === "exists" || cond.op === "not_exists") return `${f} ${OP_WORDS[cond.op]}`;
-  return `${f} ${OP_WORDS[cond.op]} ${valueWords(cond.value)}`;
+  return `${f} ${OP_WORDS[cond.op]} ${words(cond.value)}`;
 }
 
 export function describeAction(a: RuleAction): string {
@@ -363,7 +376,7 @@ export function describeRule(def: DynamicRuleDefinition): string {
     parts.push(`for each ${t}${def.for_each.where ? ` where ${describeCondition(def.for_each.where)}` : ""}`);
   }
   const head = parts.length ? parts.join(", ") : "On every wake";
-  const cooldown = def.cooldown_hours ? ` At most once every ${def.cooldown_hours} h.` : "";
+  const cooldown = def.cooldown_hours ? ` At most once every ${def.cooldown_hours} hours.` : "";
   return `${head}: ${describeAction(def.action)}.${cooldown}`;
 }
 

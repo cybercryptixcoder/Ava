@@ -1,0 +1,108 @@
+/*
+ * Ava design tokens. See docs/design-plan.md.
+ * Light: "enamel dial". Dark: "night dial", designed on its own terms.
+ * Steel is Ava's hand: it marks what is hers (planned wakes, intended work,
+ * the now-hand, her recommendation, the single primary action).
+ */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f4f2;
+  --surface: #fbfbfa;
+  --sunken: #e8eae7;
+  --ink: #121418;
+  --ink-2: #454b53;
+  --ink-3: #626872;
+  --rule: #d2d5d9;
+  --rule-strong: #868c93;
+  --steel: #2443b0;
+  --steel-ink: #ffffff;
+  --steel-tint: rgba(36, 67, 176, 0.09);
+  --steel-line: rgba(36, 67, 176, 0.38);
+  --event: #e1e4e8;
+  --event-edge: #c3c8ce;
+  --hatch: rgba(18, 20, 24, 0.075);
+  --signal: #b3261e;
+  --signal-tint: rgba(179, 38, 30, 0.08);
+  --shadow-float: 0 1px 2px rgba(18, 20, 24, 0.06), 0 8px 28px rgba(18, 20, 24, 0.12);
+  --scrim: rgba(18, 20, 24, 0.28);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171a1f;
+  --surface: #1e2228;
+  --sunken: #121418;
+  --ink: #e9e6dc;
+  --ink-2: #b7b5ac;
+  --ink-3: #8f908b;
+  --rule: #2b3037;
+  --rule-strong: #68707a;
+  --steel: #90a7f3;
+  --steel-ink: #0e1530;
+  --steel-tint: rgba(144, 167, 243, 0.13);
+  --steel-line: rgba(144, 167, 243, 0.45);
+  --event: #262b32;
+  --event-edge: #363c45;
+  --hatch: rgba(233, 230, 220, 0.06);
+  --signal: #f28b80;
+  --signal-tint: rgba(242, 139, 128, 0.1);
+  --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 32px rgba(0, 0, 0, 0.45);
+  --scrim: rgba(0, 0, 0, 0.5);
+}
+
+:root {
+  /* Faces */
+  --face-ui: "Archivo Variable", "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --face-voice: "Newsreader Variable", "Newsreader", ui-serif, Georgia, serif;
+
+  /* Type roles: size / line-height */
+  --t-dial: 56px;
+  --t-title: 26px;
+  --t-section: 17px;
+  --t-voice: 19px;
+  --t-voice-sm: 16px;
+  --t-body: 15px;
+  --t-meta: 13px;
+  --t-label: 12px;
+  --t-tick: 11px;
+
+  /* Space (4 px base) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 72px;
+
+  /* Radii by hierarchy */
+  --r-chip: 2px;
+  --r-control: 6px;
+  --r-sheet: 12px;
+
+  /* Layout */
+  --rail: 196px;
+  --gutter: 16px;
+  --hour: 56px;
+
+  /* Motion: functional only */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --t-fast: 120ms;
+  --t-move: 220ms;
+}
+
+@media (min-width: 720px) {
+  :root {
+    --gutter: 28px;
+    --hour: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-move: 0ms;
+  }
+}

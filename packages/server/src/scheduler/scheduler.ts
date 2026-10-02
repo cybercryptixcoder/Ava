@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { atLocal, formatClock, inQuietHours, isClosed, localDateKey, parseLocalTime, type Item, type WakeView } from "@ava/shared";
+import { atLocal, formatClock, spanPhrase, inQuietHours, isClosed, localDateKey, parseLocalTime, type Item, type WakeView } from "@ava/shared";
 import type { Db } from "../db/db";
 import { j, js, newId } from "../db/db";
 import type { Clock } from "../core/clock";
@@ -168,12 +168,25 @@ export class Scheduler {
   }
 
   private pendingByDedupe(key: string): Wake | null {
-    const r = this.db.get("SELECT * FROM wakes WHERE dedupe_key = ? AND status = 'pending'", [key]);
+    const r =
+      this.db.get("SELECT * FROM wakes WHERE dedupe_key = ? AND status = 'pending'", [key]) ??
+      this.db.get("SELECT * FROM wakes WHERE status = 'pending' AND kind = 'deadline' AND payload LIKE ?", [`%"${key}"%`]);
     return r ? rowToWake(r) : null;
   }
 
   /** System wakes skip budget checks but still dedupe. */
   system(req: WakeRequest): Wake {
+    if (req.kind === "deadline" && req.dedupe_key && !this.pendingByDedupe(req.dedupe_key)) {
+      // Several deadlines on the same morning share one wake.
+      const same = this.db.get("SELECT * FROM wakes WHERE kind = 'deadline' AND status = 'pending' AND due_at = ?", [req.at.toISOString()]);
+      if (same) {
+        const w = rowToWake(same);
+        const ids = Array.from(new Set([...w.item_ids, ...(req.item_ids ?? [])]));
+        const keys = Array.from(new Set([...(w.payload.keys as string[] | undefined ?? [w.dedupe_key ?? ""]), req.dedupe_key])).filter(Boolean);
+        this.db.run("UPDATE wakes SET item_ids = ?, reason = ?, payload = ? WHERE id = ?", [js(ids), w.reason.includes(req.reason) ? w.reason : `${w.reason}; ${req.reason}`, js({ ...w.payload, keys }), w.id]);
+        return this.get(w.id)!;
+      }
+    }
     if (req.dedupe_key) {
       const existing = this.pendingByDedupe(req.dedupe_key);
       if (existing) {
@@ -355,7 +368,12 @@ export class Scheduler {
     const s = this.settings.get();
     const tz = this.settings.tz();
     for (const w of this.pending({ kinds: ["deadline"] })) {
-      if (w.item_ids.includes(item.id)) this.db.run("UPDATE wakes SET status = 'cancelled', outcome = 'resynced', finished_at = ? WHERE id = ?", [this.now().toISOString(), w.id]);
+      if (!w.item_ids.includes(item.id)) continue;
+      const rest = w.item_ids.filter((x) => x !== item.id);
+      if (rest.length) {
+        const keys = ((w.payload.keys as string[] | undefined) ?? []).filter((k) => !k.startsWith(`deadline:${item.id}:`));
+        this.db.run("UPDATE wakes SET item_ids = ?, payload = ? WHERE id = ?", [js(rest), js({ ...w.payload, keys }), w.id]);
+      } else this.db.run("UPDATE wakes SET status = 'cancelled', outcome = 'resynced', finished_at = ? WHERE id = ?", [this.now().toISOString(), w.id]);
     }
     if (!item.due_at || isClosed(item.type, item.status) || !["task", "commitment"].includes(item.type)) return;
     const due = new Date(item.due_at);
@@ -399,7 +417,7 @@ export class Scheduler {
         this.system({
           kind: "lookahead",
           at,
-          reason: after ? `After ${after.title}: ${b.minutes} free minutes` : `Free block of ${b.minutes} minutes starts ${formatClock(b.start, w.tz)}`,
+          reason: after ? `After ${after.title}, ${spanPhrase(b.minutes)} free` : `Before ${spanPhrase(b.minutes)} free from ${formatClock(b.start, w.tz)}`,
           owner: "system",
           item_ids: after ? [after.id] : [],
           dedupe_key: `lookahead:${b.start.slice(0, 16)}`,

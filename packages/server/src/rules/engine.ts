@@ -18,7 +18,7 @@ export interface EvaluationResult {
 }
 
 /** Firing outcomes that start a rule's cooldown for the same dedupe key. */
-const COOLING_OUTCOMES = ["message_sent", "queued_for_brief", "prepared", "wake_requested", "validator_failed"];
+const COOLING_OUTCOMES = ["message_sent", "queued_for_brief", "prepared", "wake_requested", "validator_failed", "dropped"];
 
 export class RuleEngine {
   constructor(

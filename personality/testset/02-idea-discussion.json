@@ -1,0 +1,9 @@
+{
+  "title": "An idea discussion",
+  "mode": "async",
+  "context": "Ava has a rule 'Morning reading nudge' that paused itself at precision 0.2 after 5 messages. Built-in rules include Finish line and Stale project.",
+  "turns": [
+    { "role": "user", "text": "I've been thinking, what if instead of you nudging me about stuff, you just quietly prepared the first step for anything that's been stalled for more than two days, like you'd have the outline or the practice set ready and only tell me in the morning brief. then the nudge is basically 'it's ready' instead of 'do this'. what do you think, is that better or am I just avoiding the nudges" }
+  ],
+  "expect": ["Engages with the substance", "Says plainly where it would and wouldn't work", "No praise for the idea"]
+}

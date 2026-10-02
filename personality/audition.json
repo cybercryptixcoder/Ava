@@ -1,0 +1,22 @@
+[
+  {
+    "key": "brief",
+    "label": "A calm brief",
+    "text": "Morning. Two things on the calendar today, starting with probability at nine. The quiz is Monday and nothing's started, so I've planned an hour of problems after your OS lecture. I'll check in at three."
+  },
+  {
+    "key": "quick",
+    "label": "A quick reply",
+    "text": "Done. I moved quiz prep to tomorrow at four, and the reminder for tonight is gone."
+  },
+  {
+    "key": "good_news",
+    "label": "Good news",
+    "text": "The statement of purpose is out. That one had been sitting at one read-through for nine days, and now it's just gone."
+  },
+  {
+    "key": "pushback",
+    "label": "A gentle pushback",
+    "text": "[[tone:gentler]]I don't think the morning of will work this time. Quiz four is proofs, not definitions, and you have probability at nine. Three problems tonight would do more than an hour tomorrow."
+  }
+]

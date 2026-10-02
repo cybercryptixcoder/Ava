@@ -130,10 +130,12 @@ const freeBlock: BuiltinRule = {
           { label: "Leave the block free", action: { kind: "none" } },
         ],
         urgency: "now",
-        dedupe_key: `${this.id}:${block.start.slice(0, 16)}`,
+        // The block's end identifies it; its start moves as "now" moves.
+        dedupe_key: `${this.id}:${block.end.slice(0, 16)}`,
         cooldown_hours: 2,
         category: this.category,
         priority: 60,
+        queueable: false,
       },
     ];
   },

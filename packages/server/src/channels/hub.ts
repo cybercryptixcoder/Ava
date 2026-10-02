@@ -95,15 +95,15 @@ export class ChannelHub {
     return this.svc.db.all("SELECT id, user_agent, created_at, last_ok_at FROM push_subscriptions ORDER BY created_at DESC");
   }
 
-  private async broadcast(payload: PushPayload): Promise<void> {
+  private async broadcast(payload: PushPayload, wakeId: string | null = null): Promise<void> {
     if (this.svc.clock.simulated) {
-      this.svc.log.info("push.simulated", `(simulated) push: ${payload.title}`, { payload });
+      this.svc.log.info("push.simulated", `(simulated) push: ${payload.title}`, { payload }, wakeId);
       return;
     }
     for (const c of this.channels) {
       if (!c.available()) continue;
       const r = await c.send(payload);
-      this.svc.log.info("push.delivered", `${c.id}: "${payload.title}" to ${r.delivered} device${r.delivered === 1 ? "" : "s"}${r.failed ? `, ${r.failed} failed` : ""}`, { tag: payload.tag });
+      this.svc.log.info("push.delivered", `${c.id}: "${payload.title}" to ${r.delivered} device${r.delivered === 1 ? "" : "s"}${r.failed ? `, ${r.failed} failed` : ""}`, { tag: payload.tag }, wakeId);
     }
   }
 
@@ -119,11 +119,11 @@ export class ChannelHub {
         { action: "do_it", title: RESPONSE_LABELS.do_it },
         { action: "already_done", title: RESPONSE_LABELS.already_done },
       ],
-    });
+    }, m.wake_id);
   }
 
-  async notify(title: string, body: string, url: string, tag: string): Promise<void> {
-    await this.broadcast({ title, body, url, tag });
+  async notify(title: string, body: string, url: string, tag: string, wakeId: string | null = null): Promise<void> {
+    await this.broadcast({ title, body, url, tag }, wakeId);
   }
 
   /** System alerts (dead-man's switch) are plain: no rule, no options. */

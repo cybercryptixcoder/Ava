@@ -14,7 +14,7 @@
     "bench:voice": "tsx src/cli/bench-voice.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "latest",
+    "@anthropic-ai/sdk": "^0.131.0",
     "@ava/shared": "*",
     "@fastify/cookie": "^11.1.2",
     "@fastify/multipart": "^10.1.2",

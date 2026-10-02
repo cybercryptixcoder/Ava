@@ -128,8 +128,9 @@ export class WakeProcedure {
 
     const cap = settings.get().caps.unprompted_per_day;
     const sentToday = counters.get("messages.unprompted");
-    // Messages beyond the cap still get drafted (they queue for the brief), bounded to a few.
-    const allowed = Math.min(3, Math.max(1, cap - sentToday));
+    // One model call ranks and drafts a couple of candidates: at most one goes out per wake;
+    // anything beyond the cap is drafted for the brief. The rest come back on later wakes.
+    const allowed = sentToday >= cap ? 2 : Math.min(2, settings.get().caps.max_per_wake + 1);
     const since = DateTime.fromJSDate(clock.now()).setZone(settings.tz()).startOf("day").toUTC().toISO()!;
     const recent = messages.list({ since, kinds: ["nudge"], limit: 10 }).map((m) => m.headline);
     const drafted = await this.drafter.draft(suggest, { allowed, wakeId: w.id, recentHeadlines: recent });
@@ -137,7 +138,8 @@ export class WakeProcedure {
     let sent = 0,
       queued = 0,
       failed = 0,
-      deferred = 0;
+      deferred = 0,
+      held = 0;
     for (const { candidate, draft } of drafted.drafts) {
       const result = validateMessage(draft, {
         now: clock.now(),
@@ -156,16 +158,21 @@ export class WakeProcedure {
         continue;
       }
       log.info("validator.passed", `Validator passed: ${result.rendered.headline}`, { rule: candidate.rule_name }, w.id);
-      const out = await this.dispatcher.dispatch(candidate, draft, result.rendered, world, w.id, drafted.draftedBy);
+      const out = await this.dispatcher.dispatch(candidate, draft, result.rendered, world, w.id, drafted.draftedBy, sent);
       if (out.kind === "sent") {
         sent++;
         engine.recordFiring(candidate, w.id, "message_sent", out.message.id);
       } else if (out.kind === "queued") {
         queued++;
         engine.recordFiring(candidate, w.id, "queued_for_brief", out.message.id, { reason: out.reason });
-      } else {
+      } else if (out.kind === "deferred") {
         deferred++;
         engine.recordFiring(candidate, w.id, "deferred", null, { reason: out.reason, until: out.until });
+      } else if (out.kind === "held") {
+        held++;
+        engine.recordFiring(candidate, w.id, "held", null, { reason: out.reason });
+      } else {
+        engine.recordFiring(candidate, w.id, "dropped", null, { reason: out.reason });
       }
     }
     for (const s of drafted.skipped) engine.recordFiring(s.candidate, w.id, "not_selected", null, { why: s.why });
@@ -173,7 +180,7 @@ export class WakeProcedure {
       scheduler.request({ kind: "planner", at: f.at, reason: f.reason, owner: "ava:wake", item_ids: f.item_ids }, w.id);
     }
     engine.snapshot(engine.world(), w.id);
-    return `${suggest.length} candidates: ${sent} sent, ${queued} queued, ${deferred} deferred, ${failed} failed validation (${drafted.draftedBy.replace("_", " ")})`;
+    return `${suggest.length} candidates: ${sent} sent, ${queued} queued, ${deferred} deferred, ${held} held, ${failed} failed validation (${drafted.draftedBy.replace("_", " ")})`;
   }
 
   private async pingDeadman(): Promise<void> {

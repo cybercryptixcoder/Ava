@@ -1,0 +1,7 @@
+{
+  "title": "A quick update",
+  "mode": "async",
+  "context": "MATH 486 Problem Set 5 was due tomorrow 23:59 and is now done. A check-in was planned for 21:25 tonight about it.",
+  "turns": [{ "role": "user", "text": "finished the problem set" }],
+  "expect": ["One or two lines", "No reflex question"]
+}

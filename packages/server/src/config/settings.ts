@@ -21,7 +21,7 @@ export const SettingsSchema = z.object({
   locations: z.array(z.object({ id: z.string(), label: z.string(), tz: z.string() })).min(1),
   current_location_id: z.string(),
   quiet_hours: z.object({ start: LocalTime, end: LocalTime }),
-  caps: z.object({ unprompted_per_day: z.number().int().min(0).max(20) }),
+  caps: z.object({ unprompted_per_day: z.number().int().min(0).max(20), max_per_wake: z.number().int().min(1).max(3) }),
   budgets: z.object({
     system_calls: z.number().int().min(0),
     interactive_calls: z.number().int().min(0),
@@ -104,7 +104,7 @@ export function defaultSettings(envDefaults: {
     locations: DEFAULT_LOCATIONS,
     current_location_id: "state-college",
     quiet_hours: { start: "23:00", end: "08:00" },
-    caps: { unprompted_per_day: 3 },
+    caps: { unprompted_per_day: 3, max_per_wake: 1 },
     budgets: { system_calls: envDefaults.budgetSystem, interactive_calls: envDefaults.budgetInteractive, usd: envDefaults.budgetUsd },
     heartbeat_every_hours: 3,
     brief_time: "08:30",

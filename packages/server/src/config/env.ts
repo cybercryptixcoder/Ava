@@ -27,7 +27,7 @@ export const ENV_SPEC: EnvVarSpec[] = [
   { group: "Core", key: "PORT", description: "HTTP port the server listens on.", default: "4317" },
   { group: "Core", key: "HOST", description: "Interface to bind. Use 127.0.0.1 behind a tunnel.", default: "127.0.0.1" },
   { group: "Core", key: "PUBLIC_URL", description: "The public https URL you reach Ava at (your tunnel hostname). Used for OAuth redirects, push and calendar webhooks.", where: "Your tunnel, e.g. https://ava.example.com", default: "http://localhost:4317" },
-  { group: "Core", key: "AVA_PASSWORD_HASH", description: "scrypt hash of your login password. Generate with `npm run hash-password`.", where: "npm run hash-password", secret: true, required: true },
+  { group: "Core", key: "AVA_PASSWORD_HASH", description: "scrypt hash of your login password.", where: "npm run hash-password", secret: true, required: true },
   { group: "Core", key: "AVA_PASSWORD", description: "Plain login password (alternative to AVA_PASSWORD_HASH; hashed in memory at startup). Prefer the hash.", secret: true },
   { group: "Core", key: "AVA_SESSION_SECRET", description: "Random secret (32+ chars) used to sign session cookies.", where: "openssl rand -hex 32", secret: true, required: true },
   { group: "Core", key: "AVA_ENCRYPTION_KEY", description: "32-byte key (64 hex chars) that encrypts sensitive data at rest. Losing it makes encrypted data unreadable.", where: "openssl rand -hex 32", secret: true, required: true },
@@ -123,7 +123,7 @@ export function renderEnvExample(): string {
       group = s.group;
     }
     const where = s.where ? ` Get it: ${s.where}.` : "";
-    const req = s.required ? " (required)" : "";
+    const req = s.required ? " Required in production." : "";
     lines.push(`# ${s.description}${where}${req}`);
     lines.push(`${s.key}=${s.default ?? ""}`);
   }

@@ -1,4 +1,5 @@
-import { formatClock, inQuietHours, type MessageView } from "@ava/shared";
+import { DateTime } from "luxon";
+import { atLocal, formatClock, inQuietHours, type MessageView } from "@ava/shared";
 import type { Services } from "../core/services";
 import type { Candidate } from "../rules/candidates";
 import { inClassBlock, type WorldState } from "../rules/world";
@@ -7,12 +8,19 @@ import type { MessageDraft } from "../validator/message-validator";
 export type DispatchOutcome =
   | { kind: "sent"; message: MessageView }
   | { kind: "queued"; message: MessageView; reason: string }
-  | { kind: "deferred"; reason: string; until: string };
+  | { kind: "deferred"; reason: string; until: string }
+  | { kind: "held"; reason: string }
+  | { kind: "dropped"; reason: string };
 
 /**
  * Step 7 of the wake procedure: send now, or queue for the morning brief,
  * depending on urgency, caps, quiet hours and class blocks. The caps here
  * are constitutional; no rule or setting written by Ava can reach them.
+ *
+ * Beyond the hard rules: at most one message goes out per wake (so nudges
+ * never arrive in a burst), anything due before the morning brief waits for
+ * the brief, and time-bound suggestions that can't go out now are dropped
+ * rather than queued into tomorrow.
  */
 export class Dispatcher {
   constructor(private svc: Services) {}
@@ -24,11 +32,13 @@ export class Dispatcher {
     world: WorldState,
     wakeId: string,
     draftedBy: "model" | "fallback_template",
+    sentThisWake: number,
   ): Promise<DispatchOutcome> {
-    const { settings, clock, counters, messages, channels, log, scheduler } = this.svc;
+    const { settings, clock, counters, messages, channels, log, scheduler, db } = this.svc;
     const s = settings.get();
     const now = clock.now();
     const tz = settings.tz();
+    const queueable = c.queueable !== false;
     const base = {
       kind: "nudge" as const,
       rule_id: c.rule_id,
@@ -43,12 +53,22 @@ export class Dispatcher {
       drafted_by: draftedBy,
     };
     const queue = (reason: string): DispatchOutcome => {
+      if (!queueable) {
+        log.info("message.dropped", `Dropped a time-bound suggestion (${reason}): ${rendered.headline}`, { rule: c.rule_name }, wakeId);
+        return { kind: "dropped", reason };
+      }
       const message = messages.create({ ...base, status: "queued", block_reason: reason });
       log.info("message.queued", `Queued for the morning brief (${reason}): ${rendered.headline}`, { message_id: message.id, rule: c.rule_name }, wakeId);
       return { kind: "queued", message, reason };
     };
 
     if (inQuietHours(now, tz, s.quiet_hours.start, s.quiet_hours.end)) return queue("quiet hours");
+
+    // Before today's brief has gone out, things wait for the brief instead of arriving one by one.
+    const today = DateTime.fromJSDate(now).setZone(tz).toISODate()!;
+    const briefAt = atLocal(today, s.brief_time, tz);
+    const briefDone = !!db.get("SELECT id FROM briefs WHERE date = ?", [today]);
+    if (!briefDone && now < briefAt) return queue(`the morning brief is at ${formatClock(briefAt, tz)}`);
 
     const cls = inClassBlock(world, now);
     if (cls) {
@@ -72,6 +92,11 @@ export class Dispatcher {
 
     const sent = counters.get("messages.unprompted");
     if (sent >= s.caps.unprompted_per_day) return queue(`daily cap of ${s.caps.unprompted_per_day} reached`);
+
+    if (sentThisWake >= s.caps.max_per_wake) {
+      log.info("message.held", `Held "${rendered.headline}" for a later wake (one message per wake)`, { rule: c.rule_name }, wakeId);
+      return { kind: "held", reason: "one message per wake" };
+    }
 
     const message = messages.create({ ...base, status: "sent" });
     counters.add("messages.unprompted");

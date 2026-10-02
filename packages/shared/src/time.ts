@@ -119,6 +119,16 @@ export function formatClock(at: Date | string, tz: string, opts: { h24?: boolean
   return l.toFormat(l.minute === 0 ? "h a" : "h:mm a").toLowerCase();
 }
 
+/** "45 minutes", "2 hours", "2 hours 30 minutes": a span as you'd say it. */
+export function spanPhrase(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"}`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  const hours = `${h} hour${h === 1 ? "" : "s"}`;
+  return r ? `${hours} ${r} minutes` : hours;
+}
+
 /** Human relative phrasing used in "because" lines: "in 2 days", "tomorrow at 9 am". */
 export function relativePhrase(now: Date, at: Date | string, tz: string): string {
   const target = typeof at === "string" ? new Date(at) : at;

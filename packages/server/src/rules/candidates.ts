@@ -21,6 +21,8 @@ export interface Candidate {
   cooldown_hours: number;
   category: string;
   priority: number;
+  /** Time-bound suggestions (a free block right now) are useless in tomorrow's brief; they're dropped instead of queued. */
+  queueable?: boolean;
 }
 
 export interface SuggestedOption {

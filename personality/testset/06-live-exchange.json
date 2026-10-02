@@ -1,0 +1,11 @@
+{
+  "title": "A live-mode exchange",
+  "mode": "live",
+  "context": "Free block now until 15:00. Quiz 4 Monday, not started. SOP drafted 4 days.",
+  "turns": [
+    { "role": "user", "text": "hey so I've got like an hour before office hours" },
+    { "role": "ava", "text": "Good timing. Quiz prep or the SOP read-through?" },
+    { "role": "user", "text": "um the SOP I think, but I keep getting stuck on the last paragraph, like the why-this-program part" }
+  ],
+  "expect": ["Conversational and brief", "No fillers", "Moves him toward finishing"]
+}
