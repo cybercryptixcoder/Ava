@@ -20,9 +20,9 @@ Nothing runs continuously. Between wakes the server is idle apart from HTTP requ
 
 **Items** (`state/items.ts`, schema in `packages/shared/src/items.ts`) are the structured life model: tasks, deadlines, projects, commitments to people, replies owed (open loops), goals, preferences, saved items, calendar events. Each type declares its statuses; type-specific fields live in a JSON `data` column, so new types don't need migrations. Every change is recorded in `item_history`. Checking something off is immediate and cancels the wakes about it.
 
-**Changes are proposals first.** Extraction (from conversation, imports, Gmail, Wispr notes) produces `Change` objects (`packages/shared/src/changes.ts`) that become confirmation chips (`state/proposals.ts`). Accepting applies the change through the same store; rejecting leaves nothing behind but the record.
+**Changes are proposals first.** Extraction (from conversation, imports, Gmail, Wispr notes) produces `Change` objects (`packages/shared/src/changes.ts`). In a conversation they are filed directly, with per-item undo, and only genuinely ambiguous or consequential ones wait as cards; in review queues (chat-history imports, saved items) they become confirmation chips (`state/proposals.ts`). Accepting applies the change through the same store; rejecting leaves nothing behind but the record.
 
-**Active sensing.** When an unknown matters (does this project still matter?), the planner can queue one question (`state/questions.ts`). It appears in the morning brief and on Today, and the answer becomes a belief or a change.
+**Active sensing.** When an unknown matters (does this project still matter?), the planner can queue one question (`state/questions.ts`). It appears in the morning stack, and the answer becomes a belief or a change.
 
 **Rhythms** (`state/rhythms.ts`) are computed once a day from activity sessions and calendar history (when you tend to study, work, be on the laptop) and proposed as observed beliefs with their numbers attached.
 
@@ -73,30 +73,23 @@ Every step writes to the decision log (`core/log.ts`), grouped by wake on the Lo
 
 `planner/planner.ts`. The evening plan, the weekly review and focused sessions for something genuinely new (a new project) are the only places the large model plans. It sees the life model, the week's calendar, rhythms, rule statistics, recent messages and responses, and executor reports, and returns data: planned blocks, wake requests, rule proposals, at most one question, belief proposals and notes for the brief. Everything is validated before it takes effect. The planner never grades its own plans: executor sessions report whether the plan still fit reality, and those reports feed the next plan.
 
-The **morning brief** (`planner/brief.ts`) gathers the day: calendar, deadlines, planned check-ins, messages queued overnight, rule proposals and the question. It produces a short spoken version (under a minute) and screen modules, and is pre-rendered to audio when a voice is configured.
+The **morning stack** (`planner/brief.ts`) is composed at the brief time: stale queued messages are dropped, the rest become cards visible now, the open question and the occasional rule or belief card are added, and a few spoken sentences are pre-rendered to audio when a voice is configured.
 
 ## Executors
 
 `executors/executors.ts`. Accepting an option such as "make me a practice set" or "draft the reply" starts an executor task. Each session is a fresh model call with only the task spec and the item's context (never the planner's reasoning), producing an artifact (practice set, summary, draft, outline, plan) and a report: what was produced, whether the plan still fits, whether another bounded session is needed. Multi-session tasks request their next session through the scheduler. Executors never send anything. Sending a draft goes through `actions/external.ts`: you see exactly what will be sent and to whom, can edit it, and confirm each time; the server sends only the text you confirmed.
 
-## Conversation and the canvas
+## Conversation
 
-`conversation/conversation.ts`, `canvas/`.
+`conversation/conversation.ts`. An async turn: your words are stored as evidence; a fast extraction call turns them into changes, which are filed directly with per-item undo (anything ambiguous or consequential becomes a card instead); then the conversation model streams a short reply that shows briefly on the main page and lives in the transcript sheet. The reply protocol (`conversation/protocol.ts`) allows `<propose>` for changes Ava wants confirmed and `<style_note>` when you react to how she talks; results otherwise show up as changes to the stack, not as a canvas of modules. Ava sees his stack every turn and knows what is behind each card.
 
-An async turn: your words are stored as evidence; a fast extraction call turns them into confirmation chips; then the conversation model streams a reply. The reply interleaves words with canvas directives:
-
-- `<show>{module spec}</show>`, `<update key="…">{patch}</update>`, `<remove key="…"/>`
-- `<propose>[changes]</propose>` for chips Ava wants confirmed
-- `<style_note>…</style_note>` when you react to how she talks
-- cue tokens such as `[[plan]]` or `[[opts.o2]]` in the spoken text, marking the moment a module or one of its parts should appear
-
-Module specs are validated against a typed vocabulary (`packages/shared/src/canvas.ts`: day timeline, week view, task list, options, deadline horizon, project card, artifact preview, comparison table, rule card, belief card, confirmation chips, note, rhythm view, chart). The server hydrates references (item ids, rule ids, artifact ids) from real state before anything renders; a spec that fails is dropped and logged. Ava knows what is on the canvas: each turn includes a summary of the modules, she can fetch a module's full state with a tool, and your interactions with modules (choosing an option, checking something off) come back to her as events.
+The canvas module machinery (`canvas/`, `packages/shared/src/canvas.ts`) remains in the codebase — module specs validated against the typed vocabulary and hydrated from real state — but the main page no longer renders modules.
 
 **How Ava talks** lives in `personality/`: `voice.md` (who she is), `spoken.md` and `operational.md` (style for speech and for messages), `examples.md`. Length scales with what you said. She is never told to encourage; instead an affirmation budget is enforced after the fact (`conversation/affirmation.ts`): at most one affirmation per ten replies, none in operational messages unless acknowledging a real completion. Over budget, the sentence is trimmed (also from the stored raw reply) or, if nothing would be left, the reply is regenerated without it. Style notes you give are stored and included in every later turn.
 
 ## Voice
 
-`voice/`. Speech adaptation (`packages/shared/src/speech.ts`, `voice/speech-adapt.ts`) turns written text into speakable text (clock times, abbreviations, your pronunciations) while keeping cue offsets, then maps word timings back to cues so the app reveals canvas parts as the words are spoken. ElevenLabs returns character alignment (converted to words); Cartesia returns word timestamps; if a model returns none, forced alignment is used.
+`voice/`. Speech adaptation (`packages/shared/src/speech.ts`, `voice/speech-adapt.ts`) turns written text into speakable text (clock times, abbreviations, your pronunciations) while keeping cue offsets, then maps word timings back to cues so playback can follow the words. ElevenLabs returns character alignment (converted to words); Cartesia returns word timestamps; if a model returns none, forced alignment is used.
 
 **Live mode** (`voice/live.ts`) runs over one WebSocket: 16 kHz microphone audio up, 24 kHz speech down. Streaming recognition (Deepgram Flux or AssemblyAI) provides semantic end-of-turn with thresholds set by your patience setting; on top of that `voice/turn-detector.ts` holds the turn open when the last words sound unfinished ("…and", "so the") and joins whatever you say next. An early end-of-turn signal starts the model speculatively. Sentences stream into text-to-speech as they complete. Speaking over Ava stops her within a frame or two (the browser stops playback locally and the server cancels generation). Every turn records its stages (end-of-turn detection, model first token, first sentence, first audio, playback) in `latency_samples`.
 
@@ -106,9 +99,9 @@ Module specs are validated against a typed vocabulary (`packages/shared/src/canv
 
 ## Reaching you
 
-`channels/hub.ts`. Every message is a row in `messages` and appears in the app at once (server-sent events). Web push delivers it to installed devices with up to two action buttons; the service worker (`packages/web/public/sw.js`) posts responses straight back. The channel interface is small so another channel (SMS, a chat app) can be added beside web push.
+`channels/hub.ts`. Every proactive message is a row in `messages`; a message that passes the validator becomes a card in the stack rather than a separate object in the app. Web push is used only for time-sensitive cards, capped per day, and carries just the card's one line with "yes" and "not now" where the platform shows actions; the service worker (`packages/web/public/sw.js`) posts responses straight back and opens the card on tap (`/?card=<id>`). The channel interface is small so another channel (SMS, a chat app) can be added beside web push.
 
-Message anatomy: a first line that is the point; a because line built only from cited facts; 2 to 4 options that start the work; and four one-tap responses (do it, not now, already done, less of this) that feed the rule's statistics.
+Card anatomy follows the old message anatomy: a first line that is the point; a why line built only from cited facts; 2 to 4 options that start the work; and responses (yes, not now, already done, stop suggesting this) that feed the rule's statistics.
 
 ## Models and budgets
 
@@ -125,7 +118,7 @@ Message anatomy: a first line that is the point; a because line built only from 
 
 ## The web app
 
-`packages/web`. React with a small fetch-and-cache store, live updates over server-sent events, a service worker for push and an offline shell. Screens: Today (the day as a vertical dial with your calendar, Ava's plan and check-ins, and what's waiting for you), Talk (conversation and canvas), Tasks and projects, Rules, What Ava knows, Messages, Log, Settings, and the first-run setup. The look is set out in [design-plan.md](design-plan.md).
+`packages/web`. React with a small fetch-and-cache store, live updates over server-sent events, a service worker for push and an offline shell. The front room is the **stack** (`/`): one card fully visible with one or two peeking behind, swipe or the two desktop buttons to respond, tap (or Enter) for the next layer (`components/Stack.tsx`, `components/CardLayer.tsx`), a bottom bar with a prominent mic for voice notes and live mode folded in (`components/InputBar.tsx`), and the transcript as a pull-up sheet. **Calendar** (a day dial and week view of his events plus Ava's planned check-ins) and **Everything** (the full thread hierarchy, collapsed) sit one tap away; the back room — Tasks and projects, Rules, What Ava knows, Messages, Log, Settings — lives behind one menu. New cards arrive live, and a push deep link opens its card. The look is set out in [design-plan.md](design-plan.md).
 
 ## Data
 

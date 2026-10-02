@@ -1,14 +1,14 @@
 # Ava
 
-A self-hosted, proactive personal agent for one person. Ava keeps a model of your commitments, deadlines, projects and rhythms, plans ahead, and reaches out only when a rule and real evidence say she should. You talk to her by voice or text; she answers with words and a canvas of live modules (a day timeline, options, task lists, practice sets, drafts).
+A self-hosted, proactive personal agent for one person. Ava keeps a model of your commitments, deadlines, projects and rhythms, plans ahead, and reaches out only when a rule and real evidence say she should. You talk to her by voice or text; what needs you arrives as a short stack of cards — her judgment, one thing at a time — with the whole picture a tap deeper and the full database behind one menu.
 
 The core principle: **the model plans, the system owns time.** Nothing runs continuously. A deterministic scheduler wakes Ava, deterministic rules decide whether there is a reason to reach out, a validator checks every message against stored state, and caps, quiet hours and budgets are enforced in code that nothing Ava writes can change.
 
-![Today on desktop](docs/screenshots/today-desktop-light.png)
+![The stack on desktop](docs/screenshots/stack-desktop-light.png)
 
 | Phone, light | Phone, dark | Desktop, dark |
 |---|---|---|
-| ![](docs/screenshots/today-phone-light.png) | ![](docs/screenshots/talk-phone-dark.png) | ![](docs/screenshots/talk-desktop-dark.png) |
+| ![](docs/screenshots/stack-phone-light.png) | ![](docs/screenshots/stack-layer-phone-dark.png) | ![](docs/screenshots/calendar-desktop-dark.png) |
 
 More in [docs/screenshots](docs/screenshots): every screen on phone and desktop, in both themes.
 
@@ -37,7 +37,7 @@ cp .env.example .env          # optional for a first look; see Configuration
 npm run dev:test              # the test profile: fixture data and a simulated clock
 ```
 
-Open http://localhost:5174. The test profile is a realistic week (three courses, a quiz on Monday, a statement of purpose stuck at "drafted", an overdue promise to a friend, rules with history) and a morning that has already run for real on a simulated clock: wakes fired, rules evaluated, the validator decided, the brief was composed. In Settings, under Developer, you can move the clock forward an hour, a day or a week and watch it happen.
+Open http://localhost:5174. The test profile is a realistic week (three courses, a quiz on Monday, a statement of purpose stuck at "drafted", an overdue promise to a friend, rules with history) and a morning that has already run for real on a simulated clock: wakes fired, rules evaluated, the validator decided, the morning stack was composed. In Settings, under Developer, you can move the clock forward an hour, a day or a week and watch it happen.
 
 For your own data:
 
@@ -47,7 +47,7 @@ npm run dev                   # http://localhost:5173, your real profile
 
 The first time, a five-step setup walks you through connecting calendars, setting your two places, choosing a voice, importing chat history, and a first brain dump.
 
-Without any keys Ava still runs: rules, the scheduler, the validator, the brief and messages all work, with messages worded from deterministic templates. Each key you add turns on its feature. `npm run config:check` prints what is present, what is missing and what is off as a result; the same report prints at startup and appears in Settings.
+Without any keys Ava still runs: rules, the scheduler, the validator, the morning stack and messages all work, with messages worded from deterministic templates. Each key you add turns on its feature. `npm run config:check` prints what is present, what is missing and what is off as a result; the same report prints at startup and appears in Settings.
 
 For production on this machine: `npm start` builds everything and starts the server on http://127.0.0.1:4317 (it needs the three core secrets below).
 
@@ -101,14 +101,14 @@ Every source is a plugin with an on/off switch, a status line and "Delete this s
 
 Ava speaks with ElevenLabs or Cartesia and listens with Deepgram or AssemblyAI.
 
-- **Async replies** (you type or dictate, she answers in text and optionally speech): default `eleven_v3`, the most expressive model, with word timings so canvas modules appear as she mentions them.
+- **Async replies** (you type or dictate, she answers in text and optionally speech): default `eleven_v3`, the most expressive model, with word timings so playback follows her words.
 - **Live mode** (a real-time conversation over a WebSocket): streaming recognition with semantic end-of-turn detection tuned to wait through pauses and unfinished sentences, interruption by speaking, streaming model output into streaming speech (`eleven_flash_v2_5` by default). Each turn's latency is broken down by stage in Settings, Developer.
 
 Pick the voice in Settings, Voice: the audition plays the same lines in up to four voices, each in the expressive and the fast model, so you can choose one voice that sounds like the same person in both modes. Words to recognize (course codes, names) and pronunciations ("CMPSC = comp sci") live there too.
 
 `npm run bench:voice` runs controlled live-mode turns and reports per-stage latency (needs the model, TTS and STT keys). `npm run voice:test` runs the personality test set (six situations, from a long rant to being wrong) and stores the replies, with `--audio` to render them, for side-by-side comparison in Settings after you edit the files in [personality/](personality).
 
-Dictation tools like Wispr Flow work as-is: they type into the Talk input, which is built for minutes of dictated text and sends with one button or Ctrl/Cmd+Enter.
+Dictation tools like Wispr Flow work as-is: they type into the input bar on the stack, which is built for minutes of dictated text and sends with one button or Enter.
 
 ## Notifications and the installable app
 
@@ -116,8 +116,8 @@ Ava is a progressive web app. On a phone, open it in the browser and add it to t
 
 - Run `npm run vapid` once and put both keys in `.env`.
 - Web push needs `https` except on `localhost`, so a phone needs the deployed (tunnel) URL.
-- iPhone and iPad: notifications work only for the app added to the home screen (iOS 16.4+), and iOS doesn't show notification action buttons; tapping opens the message with all its options.
-- Browsers show at most two action buttons (Do it, Already done); the app shows every option and all four responses.
+- iPhone and iPad: notifications work only for the app added to the home screen (iOS 16.4+), and iOS doesn't show notification action buttons; tapping opens that card in your stack.
+- Browsers show at most two action buttons (Yes, Not now); everything else waits in the stack.
 
 ## The laptop activity collector
 
@@ -184,10 +184,11 @@ Tests use a scripted model provider that answers by call purpose, so flows such 
 ```
 packages/
   shared/      schemas and pure logic used by server and web: items, changes, the rule DSL,
-               the canvas module vocabulary, time helpers, speech adaptation
+               view types, time helpers, speech adaptation
   server/      Fastify API, SQLite store, scheduler, rules, validator, wake procedure, planner,
-               executors, conversation and canvas, sources, voice, push; CLI tools in src/cli
-  web/         the PWA (React, Vite); screens, canvas modules, live voice client, service worker
+               executors, conversation, sources, voice, push; CLI tools in src/cli
+  web/         the PWA (React, Vite); the card stack and its layers, screens, live voice
+               client, service worker
   collector/   the laptop activity collector
 personality/   how Ava talks: voice, spoken and operational style, examples, the test set
 docs/          architecture, design plan, screenshots
