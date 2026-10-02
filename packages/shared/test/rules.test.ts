@@ -49,6 +49,20 @@ describe("rule condition DSL", () => {
     const text = describeRule(def);
     expect(text).toContain("it's between 7 pm and 9:30 pm");
     expect(text).toContain("for each task where");
+    expect(text).toContain("Ava suggests: Start prep for the nearest quiz.");
     expect(text).toContain("At most once every 20 hours.");
+  });
+});
+
+describe("rule sentences", () => {
+  it("negates naturally and names statuses as people say them", () => {
+    const def = DynamicRuleDefinitionSchema.parse({
+      when: { all: [{ field: "calendar.minutes_since_class_ended", op: "between", value: [0, 30] }, { field: "calendar.in_class", op: "eq", value: false }] },
+      for_each: { type: "task", where: { field: "item.status", op: "eq", value: "todo" } },
+      action: { kind: "prepare", executor: "practice_set", instructions: "Twelve problems." },
+    });
+    expect(describeRule(def)).toBe(
+      "When minutes since a class ended is between 0 and 30 and you're not in class, for each task where status is not started, Ava quietly prepares a practice set: Twelve problems.",
+    );
   });
 });

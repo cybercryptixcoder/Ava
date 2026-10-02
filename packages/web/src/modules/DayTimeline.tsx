@@ -160,6 +160,7 @@ export function DayTimeline({ data, moduleKey, compact = false }: { data: Data; 
             key={p.e.id}
             className={`dial-plan${p.e.kind === "pending_change" ? " dial-ghost" : ""}`}
             data-highlight={p.e.highlighted || undefined}
+            data-crowded={wakes.some((w) => Math.abs(toMin(w.start) - p.top) < 12) || undefined}
             data-hidden={isHidden(moduleKey, p.e.id) || undefined}
             style={{ top: y(p.top), height: y(p.height), left: `calc(${(p.lane / p.lanes) * 100}% + 1px)`, width: `calc(${100 / p.lanes}% - 3px)` }}
           >

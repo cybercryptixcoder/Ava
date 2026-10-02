@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ItemTypeSchema } from "./items";
+import { ItemTypeSchema, statusLabel } from "./items";
 
 /**
  * Dynamic rules are structured, human-readable conditions over fields that
@@ -341,29 +341,37 @@ function hourWords(v: unknown): string {
   return `${h12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "am" : "pm"}`;
 }
 
+/** "you're in class" → "you're not in class"; other phrases get a plain "not". */
+function negate(phrase: string): string {
+  if (/^(you're|it's) /.test(phrase)) return phrase.replace(/^(you're|it's) /, "$1 not ");
+  if (/^fits /.test(phrase)) return phrase.replace(/^fits /, "doesn't fit ");
+  return `not ${phrase}`;
+}
+
 export function describeCondition(cond: Condition): string {
   if ("all" in cond) return cond.all.map(describeCondition).join(" and ");
   if ("any" in cond) return `(${cond.any.map(describeCondition).join(" or ")})`;
-  if ("not" in cond) return `not (${describeCondition(cond.not)})`;
+  if ("not" in cond) return "field" in cond.not ? negate(describeCondition(cond.not)) : `not (${describeCondition(cond.not)})`;
   const f = fieldWords(cond.field);
   const clock = cond.field === "now.local_hour";
-  const words = clock ? hourWords : valueWords;
+  const words = clock ? hourWords : cond.field === "item.status" ? (v: unknown) => (Array.isArray(v) ? valueWords(v.map((x) => statusLabel(String(x)).toLowerCase())) : statusLabel(String(v)).toLowerCase()) : valueWords;
   if (cond.op === "between" && Array.isArray(cond.value)) return `${clock ? "it's" : `${f} is`} between ${words(cond.value[0])} and ${words(cond.value[1])}`;
   if (cond.op === "eq" && typeof cond.value === "boolean" && /^(calendar\.in_|now\.is_|item\.fits)/.test(cond.field)) {
-    return cond.value ? f : `not ${f}`;
+    return cond.value ? f : negate(f);
   }
   if (cond.op === "exists" || cond.op === "not_exists") return `${f} ${OP_WORDS[cond.op]}`;
   return `${f} ${OP_WORDS[cond.op]} ${words(cond.value)}`;
 }
 
 export function describeAction(a: RuleAction): string {
+  const sentence = (t: string) => t.trim().replace(/[.\s]+$/, "");
   switch (a.kind) {
     case "suggest":
-      return `suggest: ${a.intent}`;
+      return `Ava suggests: ${sentence(a.intent)}`;
     case "prepare":
-      return `prepare a ${a.executor.replace(/_/g, " ")} silently: ${a.instructions}`;
+      return `Ava quietly prepares a ${a.executor.replace(/_/g, " ")}: ${sentence(a.instructions)}`;
     case "wake":
-      return `wake Ava ${a.in_minutes ? `${a.in_minutes} min later` : a.at_local ? `at ${a.at_local}` : "later"}: ${a.reason}`;
+      return `Ava checks in ${a.in_minutes ? `${a.in_minutes} minutes later` : a.at_local ? `at ${a.at_local}` : "later"}: ${sentence(a.reason)}`;
   }
 }
 
@@ -375,9 +383,10 @@ export function describeRule(def: DynamicRuleDefinition): string {
     const t = types.map((x) => x.replace(/_/g, " ")).join(" or ");
     parts.push(`for each ${t}${def.for_each.where ? ` where ${describeCondition(def.for_each.where)}` : ""}`);
   }
-  const head = parts.length ? parts.join(", ") : "On every wake";
+  const joined = parts.join(", ");
+  const head = joined ? joined.charAt(0).toUpperCase() + joined.slice(1) : "On every check-in";
   const cooldown = def.cooldown_hours ? ` At most once every ${def.cooldown_hours} hours.` : "";
-  return `${head}: ${describeAction(def.action)}.${cooldown}`;
+  return `${head}, ${describeAction(def.action)}.${cooldown}`;
 }
 
 export function actionNeedsApproval(a: RuleAction): boolean {

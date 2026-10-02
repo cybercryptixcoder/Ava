@@ -462,6 +462,11 @@ input.num {
   margin-top: var(--s3);
 }
 
+/* A quiet button that starts a row lines its text up with the text above it. */
+.row-actions > .btn-quiet:first-child {
+  margin-left: calc(-1 * var(--s2));
+}
+
 .empty {
   padding: var(--s4) 0;
   max-width: 52ch;
@@ -1294,6 +1299,12 @@ input.num {
   background: var(--steel-tint);
   box-shadow: inset 2px 0 0 var(--steel);
   color: var(--ink);
+}
+
+/* A check-in marked at the same moment sits on the block's top edge; keep the block's text clear of it. */
+.dial-plan[data-crowded="true"],
+.dial-block[data-crowded="true"] {
+  padding-top: 14px;
 }
 
 .dial-ghost {
