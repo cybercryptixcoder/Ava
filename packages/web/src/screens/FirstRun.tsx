@@ -5,14 +5,14 @@ import { refetchAll } from "../lib/store";
 import { Button } from "../components/ui";
 import { SourcesSection } from "./SettingsSources";
 import { VoiceSection } from "./SettingsVoice";
-import { LocationSwitch } from "../App";
+import { LocationSwitch } from "../components/LocationSwitch";
 
 const STEPS = [
   { title: "Connect your calendar and course feeds", body: "So Ava knows when you're busy, in class, or free. Google Calendar and any .ics course calendars." },
   { title: "Set your two places", body: "State College and Bangalore by default. Tap where you are now; every schedule follows. You can rename them in Settings." },
   { title: "Choose Ava's voice", body: "Hear the same lines in a few voices and pick one for replies and one for live mode. Ideally the same voice, so she sounds like one person." },
   { title: "Import your chat history", body: "Optional. Your ChatGPT or Claude export becomes a review queue of projects, goals and commitments, weighted toward what's recent." },
-  { title: "Tell Ava what's going on", body: "Talk about everything on your plate, as long as you like. She builds her first picture of your life with you confirming each piece." },
+  { title: "Tell Ava what's going on", body: "Talk about everything on your plate, as long as you like. She files it and anything that needs you becomes a card in your stack." },
 ];
 
 export function FirstRun() {
@@ -21,7 +21,7 @@ export function FirstRun() {
   const finish = async () => {
     await api.post("/api/setup/complete");
     refetchAll();
-    nav("/talk");
+    nav("/");
   };
   return (
     <div className="screen firstrun">
@@ -44,7 +44,7 @@ export function FirstRun() {
         {step === 1 ? <LocationSwitch /> : null}
         {step === 2 ? <VoiceSection /> : null}
         {step === 3 ? <SourcesSection only={["chat_import"]} /> : null}
-        {step === 4 ? <p className="band-note">Finishing takes you to Talk. Dictate freely; changes Ava picks up appear as chips you accept or reject.</p> : null}
+        {step === 4 ? <p className="band-note">Finishing takes you to your stack. Talk or type as long as you like; what Ava files shows up there as cards.</p> : null}
       </section>
       <div className="row-actions">
         {step > 0 ? <Button onClick={() => setStep(step - 1)}>Back</Button> : null}

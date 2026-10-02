@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { atLocal } from "@ava/shared";
+import { atLocal, type CalendarView } from "@ava/shared";
+import { buildServer } from "../src/http/server";
 import { addItem, hours, makeApp, type TestApp } from "./helpers";
 
 const NY = "America/New_York";
@@ -84,7 +85,7 @@ describe("the stack", () => {
     t.clock.set(atLocal("2026-10-06", "08:31", NY));
     const stack = t.svc.cards.stack();
     expect(stack.cards).toHaveLength(1);
-    expect(stack.cards[0]).toMatchObject({ title: m.headline, why: m.because, has_items: true });
+    expect(stack.cards[0]).toMatchObject({ title: m.headline, why: m.because, has_items: true, deeper: true });
     expect(stack.cards[0].options[0].label).toBe("Draft the reply");
   });
 
@@ -232,8 +233,44 @@ describe("approvals", () => {
     t.svc.cards.refreshPeriodic();
     const picks = t.svc.cards.stack().cards.filter((c) => c.kind === "pick");
     expect(picks).toHaveLength(1);
+    expect(picks[0].deeper).toBe(false);
     t.clock.advance(hours(24 * 5));
     t.svc.cards.refreshPeriodic();
     expect(t.svc.cards.stack().cards.filter((c) => c.kind === "pick")).toHaveLength(2);
+  });
+});
+
+describe("the calendar", () => {
+  it("shows his events and Ava's check-ins, and nothing else", async () => {
+    t = makeApp({ at: atLocal("2026-10-05", "10:00", NY).toISOString() });
+    t.svc.scheduler.ensureSystemWakes();
+    addItem(t.svc, {
+      type: "event",
+      title: "CMPSC 465 lecture",
+      start_at: atLocal("2026-10-05", "13:00", NY).toISOString(),
+      end_at: atLocal("2026-10-05", "14:15", NY).toISOString(),
+      data: { kind: "class", location: "Willard 076" },
+    });
+    const checkIn = t.svc.scheduler.system({ kind: "lookahead", at: atLocal("2026-10-05", "15:00", NY), reason: "Checking in after class", owner: "system", dedupe_key: "test:cal:1" });
+    t.svc.scheduler.system({ kind: "executor", at: atLocal("2026-10-05", "16:00", NY), reason: "Preparing a practice set", owner: "system", dedupe_key: "test:cal:2" });
+    const server = await buildServer(t.svc, { serveWeb: false });
+    try {
+      const res = await server.inject({ method: "GET", url: "/api/calendar?date=2026-10-05&days=1" });
+      expect(res.statusCode).toBe(200);
+      const view = res.json() as CalendarView;
+      expect(view.days).toHaveLength(1);
+      const day = view.days[0];
+      expect(day.date).toBe("2026-10-05");
+      expect(day.events.map((e) => e.title)).toEqual(["CMPSC 465 lecture"]);
+      expect(day.events[0]).toMatchObject({ category: "class", location: "Willard 076" });
+      expect(day.check_ins.map((c) => c.id)).toContain(checkIn.id);
+      // Internal wakes and heartbeats never appear on the calendar.
+      expect(day.check_ins.every((c) => c.kind !== "executor" && c.kind !== "heartbeat")).toBe(true);
+      const week = (await server.inject({ method: "GET", url: "/api/calendar?date=2026-10-05&days=7" })).json() as CalendarView;
+      expect(week.days.map((d) => d.date)).toEqual(["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11"]);
+      expect(week.days[1].events).toEqual([]);
+    } finally {
+      await server.close();
+    }
   });
 });

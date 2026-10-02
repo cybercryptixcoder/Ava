@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { refetchAll, useApi } from "../lib/store";
 import { ago } from "../lib/time";
 import { Button, ErrorLine, Field, Switch } from "../components/ui";
-import { ChipRow } from "../modules/modules";
+import { ChipRow } from "../components/ChipRow";
 
 interface Feed {
   id: string;

@@ -2,15 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { ChangeSchema, ItemDraftSchema, ItemPatchSchema, ResponseKindSchema } from "@ava/shared";
 import type { Services } from "../core/services";
 import { exportEverything } from "../core/retention";
-import { knowsView, todayView } from "./views";
+import { knowsView } from "./views";
 
 /** Core API: today, items, chips, beliefs, rules, messages, wakes, log, settings, actions. */
 export function registerCoreRoutes(app: FastifyInstance, svc: Services): void {
   const emit = (...what: string[]) => svc.bus.emit({ type: "state.changed", what });
 
   app.get("/api/health", async () => ({ ok: true, profile: svc.cfg.profile, now: svc.clock.now().toISOString() }));
-
-  app.get<{ Querystring: { date?: string } }>("/api/today", async (req) => todayView(svc, req.query.date));
 
   // ------------------------------------------------------------------ items
   app.get<{ Querystring: { types?: string; open?: string; q?: string; project?: string } }>("/api/items", async (req) => {

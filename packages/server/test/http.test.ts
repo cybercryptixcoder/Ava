@@ -20,21 +20,21 @@ async function boot(config: Parameters<typeof makeApp>[0] extends infer O ? (O e
 describe("access control", () => {
   it("without a password, answers only on this machine and never in production", async () => {
     const s = await boot();
-    expect((await s.inject({ method: "GET", url: "/api/today", remoteAddress: "127.0.0.1" })).statusCode).toBe(200);
-    expect((await s.inject({ method: "GET", url: "/api/today", remoteAddress: "203.0.113.9" })).statusCode).toBe(401);
+    expect((await s.inject({ method: "GET", url: "/api/stack", remoteAddress: "127.0.0.1" })).statusCode).toBe(200);
+    expect((await s.inject({ method: "GET", url: "/api/stack", remoteAddress: "203.0.113.9" })).statusCode).toBe(401);
   });
 
   it("with a password, requires a signed session cookie and rate-limits guesses", async () => {
     const s = await boot({ passwordHash: hashPassword("open sesame") });
-    expect((await s.inject({ method: "GET", url: "/api/today" })).statusCode).toBe(401);
+    expect((await s.inject({ method: "GET", url: "/api/stack" })).statusCode).toBe(401);
     expect((await s.inject({ method: "POST", url: "/api/auth/login", payload: { password: "nope" } })).statusCode).toBe(401);
     const ok = await s.inject({ method: "POST", url: "/api/auth/login", payload: { password: "open sesame" } });
     expect(ok.statusCode).toBe(200);
     const cookie = ok.cookies[0];
     expect(cookie.httpOnly).toBe(true);
-    const me = await s.inject({ method: "GET", url: "/api/today", cookies: { [cookie.name]: cookie.value } });
+    const me = await s.inject({ method: "GET", url: "/api/stack", cookies: { [cookie.name]: cookie.value } });
     expect(me.statusCode).toBe(200);
-    const forged = await s.inject({ method: "GET", url: "/api/today", cookies: { [cookie.name]: `${cookie.value.slice(0, -2)}xx` } });
+    const forged = await s.inject({ method: "GET", url: "/api/stack", cookies: { [cookie.name]: `${cookie.value.slice(0, -2)}xx` } });
     expect(forged.statusCode).toBe(401);
     for (let i = 0; i < 5; i++) await s.inject({ method: "POST", url: "/api/auth/login", payload: { password: "guess" }, remoteAddress: "198.51.100.7" });
     expect((await s.inject({ method: "POST", url: "/api/auth/login", payload: { password: "open sesame" }, remoteAddress: "198.51.100.7" })).statusCode).toBe(429);

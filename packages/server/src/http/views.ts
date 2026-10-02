@@ -1,36 +1,7 @@
 import { DateTime } from "luxon";
-import { BELIEF_AREAS, type KnowsView, type LatencySample, type TodayView, type UsageView } from "@ava/shared";
+import { BELIEF_AREAS, type KnowsView, type LatencySample, type UsageView } from "@ava/shared";
 import type { Services } from "../core/services";
 import { j } from "../db/db";
-
-export function todayView(svc: Services, date?: string): TodayView {
-  const { clock, settings, canvas, messages, proposals, rules, actions, questions, scheduler, brief, planner } = svc;
-  const tz = settings.tz();
-  const now = clock.now();
-  const day = date ?? DateTime.fromJSDate(now).setZone(tz).toISODate()!;
-  const timeline = canvas.hydrator.hydrate({ key: "today", type: "day_timeline", title: "Today", date: day });
-  if (!timeline.ok) throw new Error(timeline.errors.join("; "));
-  const since = new Date(now.getTime() - 36 * 3_600_000).toISOString();
-  const waitingMsgs = messages.list({ since, limit: 30 }).filter((m) => !m.response && !m.acted && ["sent", "queued", "in_brief"].includes(m.status) && m.kind !== "alert");
-  const next = scheduler.pending().find((w) => w.kind !== "event") ?? null;
-  return {
-    now: now.toISOString(),
-    tz,
-    location_id: settings.location().id,
-    date: day,
-    timeline: timeline.module,
-    waiting: {
-      messages: waitingMsgs,
-      proposals: proposals.pending({ limit: 60 }).filter((p) => !["chat_import"].includes(p.origin)),
-      rule_proposals: rules.list().proposed,
-      external_actions: actions.pending(),
-      question: questions.open(),
-    },
-    next_wake: next ? scheduler.view(next) : null,
-    brief: brief.view(),
-    plan_note: planner.latestPlanNote(),
-  };
-}
 
 export function knowsView(svc: Services): KnowsView {
   const all = svc.beliefs.list({ status: ["active", "proposed"] });

@@ -1,5 +1,5 @@
 import type { OptionAction, HydratedModule, ArtifactView, HydratedItem } from "./canvas";
-import type { ResponseKind, Proposal } from "./changes";
+import type { ResponseKind } from "./changes";
 import type { Item, Belief } from "./items";
 import type { RuleView, ShadowResult } from "./rules";
 
@@ -84,24 +84,6 @@ export interface PlannedBlock {
   end_at: string;
   note: string | null;
   status: string;
-}
-
-export interface TodayView {
-  now: string;
-  tz: string;
-  location_id: string;
-  date: string;
-  timeline: HydratedModule;
-  waiting: {
-    messages: MessageView[];
-    proposals: Proposal[];
-    rule_proposals: RuleView[];
-    external_actions: ExternalActionView[];
-    question: QuestionView | null;
-  };
-  next_wake: WakeView | null;
-  brief: BriefView | null;
-  plan_note: string | null;
 }
 
 export interface QuestionView {
@@ -257,6 +239,8 @@ export interface CardView {
   returns: number;
   /** Whether "already done" means anything for this card (it is about real items). */
   has_items: boolean;
+  /** Whether there is a third layer to open: the work itself or full detail. */
+  deeper: boolean;
   created_at: string;
 }
 
@@ -305,4 +289,33 @@ export interface StackView {
   all_clear: { next_check_in: WakeView | null } | null;
   /** The optional spoken morning version: a few sentences pointing at the cards. */
   morning: { brief_id: string; text: string } | null;
+}
+
+// ---------------------------------------------------------------------------
+// Calendar
+// ---------------------------------------------------------------------------
+
+/** One event, as the calendar view shows it. */
+export interface CalendarEventView {
+  id: string;
+  title: string;
+  start: string;
+  end: string | null;
+  all_day: boolean;
+  /** class | exam | meeting | social | other */
+  category: string | null;
+  location: string | null;
+}
+
+/** One day: his calendar and Ava's planned check-ins, nothing else. */
+export interface CalendarDayView {
+  date: string;
+  events: CalendarEventView[];
+  check_ins: WakeView[];
+}
+
+export interface CalendarView {
+  tz: string;
+  now: string;
+  days: CalendarDayView[];
 }

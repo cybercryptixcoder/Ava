@@ -1,7 +1,7 @@
 import type { KnowsView } from "@ava/shared";
 import { useApi } from "../lib/store";
 import { Empty, ErrorLine } from "../components/ui";
-import { BeliefRow } from "../modules/modules";
+import { BeliefRow } from "../components/BeliefRow";
 
 const AREA_LABEL: Record<string, string> = {
   study: "Study",

@@ -21,7 +21,7 @@ export function Login({ passwordSet, onDone }: { passwordSet: boolean; onDone: (
   return (
     <main className="login">
       <div className="login-card">
-        <span className="rail-mark login-mark" aria-hidden="true" />
+        <span className="dial-mark login-mark" aria-hidden="true" />
         <h1 className="login-title">Ava</h1>
         {passwordSet ? (
           <form

@@ -79,10 +79,10 @@ self.addEventListener("notificationclick", (event) => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ response: event.action }),
       })
-        .then((r) => (r.ok ? null : open(url || "/messages")))
-        .catch(() => open(url || "/messages")),
+        .then((r) => (r.ok ? null : open(url || "/")))
+        .catch(() => open(url || "/")),
     );
     return;
   }
-  event.waitUntil(open(url || "/today"));
+  event.waitUntil(open(url || "/"));
 });

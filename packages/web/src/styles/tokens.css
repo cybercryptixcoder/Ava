@@ -48,6 +48,7 @@
   --signal: #f28b80;
   --signal-tint: rgba(242, 139, 128, 0.1);
   --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 32px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 14px 44px rgba(0, 0, 0, 0.4);
   --scrim: rgba(0, 0, 0, 0.5);
 }
 
@@ -59,6 +60,7 @@
   /* Type roles: size / line-height */
   --t-dial: 56px;
   --t-title: 26px;
+  --t-card: 23px;
   --t-section: 17px;
   --t-voice: 19px;
   --t-voice-sm: 16px;
@@ -81,11 +83,15 @@
   --r-chip: 2px;
   --r-control: 6px;
   --r-sheet: 12px;
+  /* The stack's cards are a floating surface of their own. */
+  --r-card: 16px;
+  --shadow-card: 0 1px 2px rgba(18, 20, 24, 0.05), 0 12px 40px rgba(18, 20, 24, 0.09);
 
   /* Layout */
   --rail: 196px;
   --gutter: 16px;
   --hour: 56px;
+  --card-w: 620px;
 
   /* Motion: functional only */
   --ease: cubic-bezier(0.2, 0, 0, 1);

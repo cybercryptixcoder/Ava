@@ -187,6 +187,8 @@ export class CardStore {
       time_sensitive: c.time_sensitive,
       returns: c.returns,
       has_items: c.item_ids.length > 0,
+      // Beliefs, questions, filings and proposals are fully said on the second layer.
+      deeper: ["message", "rule", "artifact", "action"].includes(c.source),
       created_at: c.created_at,
     };
   }

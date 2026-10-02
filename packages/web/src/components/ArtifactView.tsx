@@ -3,7 +3,7 @@ import type { ArtifactView as Artifact, ExternalActionView } from "@ava/shared";
 import { api } from "../lib/api";
 import { refetchAll } from "../lib/store";
 import { isHidden, useRevealVersion } from "../lib/reveal";
-import { Button, ErrorLine, Sheet } from "../components/ui";
+import { Button, ErrorLine, Sheet } from "./ui";
 
 export function ArtifactView({ artifact: a, moduleKey }: { artifact: Artifact; moduleKey: string }) {
   useRevealVersion();
