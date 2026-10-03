@@ -60,7 +60,7 @@ export class SourceHub {
     this.saved = new SavedItemsSource(svc);
     this.wispr = new WisprSource(svc);
     this.all = [
-      new SimpleSource(svc, "voice", "Voice and conversation", "What you say or type to Ava: the main stream.", () => svc.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM turns WHERE role = 'user'")?.n ?? 0),
+      new SimpleSource(svc, "voice", "Voice and conversation", "What you say or type to Ava: the main stream.", () => svc.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM entries WHERE kind = 'turn' AND role = 'user'")?.n ?? 0),
       this.gcal,
       this.ics,
       new SimpleSource(svc, "manual", "Manual entry", "Tasks and projects you add by hand.", () => svc.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM items WHERE source = 'manual' AND deleted_at IS NULL")?.n ?? 0),

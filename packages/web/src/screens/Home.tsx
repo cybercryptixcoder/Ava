@@ -78,6 +78,44 @@ export function Home() {
   const [liveLine, setLiveLine] = useState("");
   const [latency, setLatency] = useState<number | null>(null);
 
+  // A first-time touch gets one quiet swipe hint; after two responses it is
+  // gone for good (per browser).
+  const [hint] = useState(() => {
+    try {
+      return {
+        touch: window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0,
+        swipes: Number(window.localStorage.getItem("ava.swipes") ?? "0") || 0,
+        nudged: window.localStorage.getItem("ava.hintNudged") === "1",
+      };
+    } catch {
+      return { touch: false, swipes: 2, nudged: true };
+    }
+  });
+  const swipesRef = useRef(hint.swipes);
+  const [swipes, setSwipes] = useState(hint.swipes);
+  const [nudge, setNudge] = useState(hint.touch && hint.swipes === 0 && !hint.nudged);
+  useEffect(() => {
+    if (!nudge) return;
+    const t = window.setTimeout(() => {
+      setNudge(false);
+      try {
+        window.localStorage.setItem("ava.hintNudged", "1");
+      } catch {
+        /* private mode */
+      }
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [nudge]);
+  const countSwipe = useCallback(() => {
+    swipesRef.current += 1;
+    try {
+      window.localStorage.setItem("ava.swipes", String(swipesRef.current));
+    } catch {
+      /* private mode */
+    }
+    setSwipes(swipesRef.current);
+  }, []);
+
   const [, tick] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => tick((x) => x + 1), 30_000);
@@ -150,6 +188,7 @@ export function Home() {
         if (r.result.summary) showToast(r.result.summary);
         if (r.result.open?.kind === "action") await openActionById(r.result.open.id);
         else if (r.result.open?.kind === "artifact") await openArtifactById(r.result.open.id);
+        if (response === "yes" || response === "not_now") countSwipe();
         refetchAll();
       } catch (e) {
         showToast((e as Error).message);
@@ -160,7 +199,7 @@ export function Home() {
         if (viaKeyboard) setFocusToken((x) => x + 1);
       }
     },
-    [openActionById, openArtifactById, showToast],
+    [countSwipe, openActionById, openArtifactById, showToast],
   );
 
   const handleTalk = useCallback(
@@ -335,7 +374,19 @@ export function Home() {
         {!stack ? (
           <div className="home-boot" aria-busy="true" />
         ) : cards.length ? (
-          <Stack cards={cards} busy={busy} focusToken={focusToken} focusedId={focusId} onRespond={(c, r, o, kb) => void respond(c, r, o, kb)} onOpen={setLayerCard} onHold={setHoldCard} />
+          <Stack
+            cards={cards}
+            busy={busy}
+            nudge={nudge}
+            focusToken={focusToken}
+            focusedId={focusId}
+            onRespond={(c, r, o, kb) => void respond(c, r, o, kb)}
+            onOpen={setLayerCard}
+            onHold={(c) => {
+              // The quieter actions exist only on suggestion cards and on cards about real items.
+              if (c.kind === "do" || c.kind === "pick" || c.has_items) setHoldCard(c);
+            }}
+          />
         ) : (
           <div className="clear">
             <span className="clear-mark" aria-hidden="true" />
@@ -343,12 +394,13 @@ export function Home() {
             {stack.all_clear?.next_check_in ? <p className="clear-next">Ava checks in again {nextLabel(stack.all_clear.next_check_in.due_at)}.</p> : null}
           </div>
         )}
-        {stack && stack.waiting > 0 ? <p className="stack-more">{stack.waiting} more waiting</p> : null}
-      </section>
+        {hint.touch && swipes < 2 && cards.length ? <p className="swipe-hint">Swipe right to do it, left to leave it for later.</p> : null}
+        </section>
 
       <footer className="home-bottom">
         <div className="home-said" aria-live="polite">
-          {!live ? <Escapement state={talk} progress={progress} /> : null}
+          {/* The escapement is an activity mark, not decoration: only while something is actually processing. */}
+          {!live && talk !== "idle" ? <Escapement state={talk} progress={progress} /> : null}
           <span className="home-said-text">{said ?? ""}</span>
         </div>
         <ErrorLine error={err} />
@@ -381,16 +433,18 @@ export function Home() {
               Already done
             </Button>
           ) : null}
-          <Button
-            kind="quiet"
-            onClick={() => {
-              const c = holdCard;
-              setHoldCard(null);
-              if (c) void respond(c, "stop");
-            }}
-          >
-            Stop suggesting this
-          </Button>
+          {holdCard && (holdCard.kind === "do" || holdCard.kind === "pick") ? (
+            <Button
+              kind="quiet"
+              onClick={() => {
+                const c = holdCard;
+                setHoldCard(null);
+                if (c) void respond(c, "stop");
+              }}
+            >
+              Stop suggesting this
+            </Button>
+          ) : null}
         </div>
       </Sheet>
 

@@ -120,21 +120,26 @@ export function LayerSheet({
             </ul>
           ) : null}
           {two?.shadow ? <Shadow shadow={two.shadow} /> : null}
-          <div className="layer-actions">
-            {card.deeper ? (
-              <Button kind="primary" size="sm" disabled={busy} onClick={() => void deeper()}>
-                Full detail
-              </Button>
-            ) : null}
-            {card.has_items ? (
-              <Button kind="quiet" size="sm" busy={busy} onClick={() => void respond("already_done")}>
-                Already done
-              </Button>
-            ) : null}
-            <Button kind="quiet" size="sm" busy={busy} onClick={() => void respond("stop")}>
-              Stop suggesting this
-            </Button>
-          </div>
+          {card.deeper || card.has_items || card.kind === "do" || card.kind === "pick" ? (
+            <div className="layer-actions">
+              {card.deeper ? (
+                <Button kind="primary" size="sm" disabled={busy} onClick={() => void deeper()}>
+                  Full detail
+                </Button>
+              ) : null}
+              {card.has_items ? (
+                <Button kind="quiet" size="sm" busy={busy} onClick={() => void respond("already_done")}>
+                  Already done
+                </Button>
+              ) : null}
+              {/* "Stop suggesting this" only makes sense on suggestion cards, never on what was filed or other heads-ups. */}
+              {card.kind === "do" || card.kind === "pick" ? (
+                <Button kind="quiet" size="sm" busy={busy} onClick={() => void respond("stop")}>
+                  Stop suggesting this
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </>
       ) : (
         <>

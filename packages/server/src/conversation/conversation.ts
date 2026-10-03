@@ -2,7 +2,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { DateTime } from "luxon";
 import { ChangeSchema, parseScript, type Change, type HydratedModule, type TurnView } from "@ava/shared";
 import type { Services } from "../core/services";
-import { j, js, newId } from "../db/db";
+import { newId } from "../db/db";
+import type { Entry } from "../state/memory";
 import { lifeModelText } from "../planner/context";
 import { STACK_PROTOCOL } from "./protocol";
 import { DirectiveParser, type Directive } from "./directives";
@@ -74,48 +75,44 @@ export function lengthGuidance(userText: string, spoken: boolean): { note: strin
 export class Conversation {
   constructor(private svc: Services) {}
 
+  /** Conversation turns, backed by the raw log (entries of kind "turn"). */
   turns(convId: string, limit = 40): TurnView[] {
-    const { db, cipher } = this.svc;
-    return db
-      .all<Record<string, unknown>>("SELECT * FROM turns WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?", [convId, limit])
+    return this.svc.memory
+      .list({ kind: "turn", session: convId, limit, order: "desc" })
       .reverse()
-      .map((r) => ({
-        id: String(r.id),
-        role: r.role as "user" | "ava",
-        mode: r.mode as "async" | "live",
-        text: cipher.decOpt(r.text_enc as string) ?? "",
-        input_kind: (r.input_kind as string) ?? null,
-        created_at: String(r.created_at),
-        audio_id: (r.audio_id as string) ?? null,
-        cues: j(r.cues, null),
-        trimmed_affirmation: !!r.trimmed,
-      }));
+      .map((e) => this.turnView(e));
   }
 
+  private turnView(e: Entry): TurnView {
+    return {
+      id: e.id,
+      role: e.role as "user" | "ava",
+      mode: (e.meta.mode as "async" | "live") ?? "async",
+      text: e.text,
+      input_kind: (e.meta.input_kind as string) ?? null,
+      created_at: e.recorded_at,
+      audio_id: (e.meta.audio_id as string) ?? null,
+      cues: (e.meta.cues as { target: string; at_ms: number }[]) ?? null,
+      trimmed_affirmation: !!e.meta.trimmed,
+    };
+  }
+
+  /** Both sides of every conversation live in the raw log; this is the only writer. */
   saveTurn(t: { convId: string; role: "user" | "ava"; mode: "async" | "live"; text: string; raw?: string; input_kind?: string; operational?: boolean; affirmation?: boolean; trimmed?: boolean }): TurnView {
-    const { db, cipher, clock } = this.svc;
-    const id = newId("trn");
-    db.run(
-      "INSERT INTO turns (id, conversation_id, role, mode, text_enc, raw_enc, input_kind, operational, affirmation, trimmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        id,
-        t.convId,
-        t.role,
-        t.mode,
-        cipher.encrypt(t.text),
-        t.raw ? cipher.encrypt(t.raw) : null,
-        t.input_kind ?? null,
-        t.operational ? 1 : 0,
-        t.affirmation ? 1 : 0,
-        t.trimmed ? 1 : 0,
-        clock.now().toISOString(),
-      ],
-    );
-    return this.turns(t.convId, 1)[0];
+    const id = this.svc.memory.append({
+      kind: "turn",
+      source: t.mode === "live" ? "live" : "conversation",
+      role: t.role,
+      session_id: t.convId,
+      text: t.text,
+      raw: t.raw ?? null,
+      meta: { mode: t.mode, input_kind: t.input_kind ?? null, operational: !!t.operational, affirmation: !!t.affirmation, trimmed: !!t.trimmed },
+    });
+    return this.turnView(this.svc.memory.get(id)!);
   }
 
   setTurnAudio(turnId: string, audioId: string, cues: { target: string; at_ms: number }[]): void {
-    this.svc.db.run("UPDATE turns SET audio_id = ?, cues = ? WHERE id = ?", [audioId, js(cues), turnId]);
+    this.svc.memory.mergeMeta(turnId, { audio_id: audioId, cues });
   }
 
   // ---------------------------------------------------------------- style notes
@@ -175,14 +172,11 @@ export class Conversation {
 
   /** Prior turns as model messages, with directives summarized so the model remembers what it showed. */
   history(convId: string, limit = 12): Anthropic.MessageParam[] {
-    const { db, cipher } = this.svc;
-    const rows = db
-      .all<Record<string, unknown>>("SELECT role, text_enc, raw_enc FROM turns WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?", [convId, limit])
-      .reverse();
+    const rows = this.svc.memory.list({ kind: "turn", session: convId, limit, order: "desc" }).reverse();
     const out: Anthropic.MessageParam[] = [];
     for (const r of rows) {
       const role = r.role === "user" ? "user" : "assistant";
-      let text = cipher.decOpt((r.raw_enc as string) ?? (r.text_enc as string)) ?? "";
+      let text = r.raw ?? r.text;
       if (role === "assistant") text = text.replace(/<show>([\s\S]*?)<\/show>/g, (_m, body) => `[showed ${/"type"\s*:\s*"([a-z_]+)"/.exec(body)?.[1] ?? "module"} ${/"key"\s*:\s*"([^"]+)"/.exec(body)?.[1] ?? ""}]`);
       if (!text.trim()) continue;
       const last = out[out.length - 1];
@@ -238,8 +232,7 @@ export class Conversation {
 
   /** Count affirmations in the last N assistant replies (for the budget). */
   recentAffirmations(window: number): number {
-    const rows = this.svc.db.all<{ affirmation: number }>("SELECT affirmation FROM turns WHERE role = 'ava' ORDER BY created_at DESC LIMIT ?", [window]);
-    return rows.reduce((n, r) => n + (r.affirmation ? 1 : 0), 0);
+    return this.svc.memory.list({ kind: "turn", role: "ava", limit: window, order: "desc" }).reduce((n, e) => n + (e.meta.affirmation ? 1 : 0), 0);
   }
 
   /** Model-based check for subtler praise the patterns miss (async mode only). */
@@ -295,7 +288,7 @@ export class Conversation {
     if (!text) throw new Error("Say or type something first");
     const userTurn = this.saveTurn({ convId, role: "user", mode: "async", text, input_kind: input.input_kind });
     sink({ type: "turn", turn: userTurn });
-    const evId = evidence.add({ kind: "transcript", source: "voice", content: text, summary: text.slice(0, 280), source_ref: userTurn.id });
+    const evId = evidence.add({ kind: "transcript", source: "voice", content: { entry_id: userTurn.id }, summary: text.slice(0, 280), source_ref: userTurn.id });
 
     // 1. Extraction first (Haiku): what he stated is filed now, with undo; what's ambiguous becomes a card.
     let chipsLine = "";

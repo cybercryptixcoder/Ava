@@ -27,6 +27,7 @@
     "voice:test": "npm run -w @ava/server personality:test --",
     "bench:voice": "npm run -w @ava/server bench:voice --",
     "config:check": "npm run -w @ava/server config:check",
+    "memory:reembed": "npm run -w @ava/server reembed",
     "vapid": "npm run -w @ava/server vapid",
     "hash-password": "npm run -w @ava/server hash-password --",
     "seed:test": "npm run -w @ava/server seed:test"

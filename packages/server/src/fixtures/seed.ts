@@ -1,6 +1,8 @@
 import { DateTime } from "luxon";
+import type Anthropic from "@anthropic-ai/sdk";
 import type { Services } from "../core/services";
 import { SimClock } from "../core/clock";
+import type { CallMeta, ModelProvider } from "../models/types";
 import { js, newId } from "../db/db";
 import { AVA_REPLY, BELIEFS, BRAIN_DUMP, CALENDAR, COURSES, DRAFT_TO_LEE, ITEMS, PRACTICE_SET, type FxItem } from "./profile";
 
@@ -91,7 +93,8 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
   // ------------------------------------------------------------ beliefs
   for (const b of BELIEFS) {
     clock.set(at(-b.daysAgo, "21:00"));
-    const evId = evidence.add({ kind: "transcript", source: "voice", content: `(fixture) ${b.statement}`, summary: b.statement });
+    const entryId = svc.memory.append({ kind: "transcript", source: "voice", text: `(fixture) ${b.statement}`, meta: { title: b.statement, backfilled: true } });
+    const evId = evidence.add({ kind: "transcript", source: "voice", content: { entry_id: entryId }, summary: b.statement });
     beliefs.add({ area: b.area, statement: b.statement, provenance: b.provenance, confidence: b.confidence, evidence_ids: [evId] });
   }
 
@@ -300,7 +303,7 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
   clock.set(at(0, "11:40"));
   const conv = svc.canvas.current(true);
   const userTurn = svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: BRAIN_DUMP, input_kind: "dictated" });
-  const ev = evidence.add({ kind: "transcript", source: "voice", content: BRAIN_DUMP, summary: BRAIN_DUMP.slice(0, 200), source_ref: userTurn.id });
+  const ev = evidence.add({ kind: "transcript", source: "voice", content: { entry_id: userTurn.id }, summary: BRAIN_DUMP.slice(0, 200), source_ref: userTurn.id });
   svc.filing.file(
     [
       { change: { op: "update_item", item_id: ids.get("os2")!, patch: { data: { notes: "Parser working" } } }, summary: "OS Project 2: the parser works", reason: "I got the parser working", stated: true },
@@ -338,8 +341,66 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
 
   clock.set(at(0, "11:52"));
   db.run("INSERT INTO settings (key, value, updated_at) VALUES ('sim.clock', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [clock.now().toISOString(), new Date().toISOString()]);
+  // The derived layers: process the fixture conversations once so the test
+  // profile shows episodes and facts, exactly as a real profile would.
+  svc.models.setProvider(new FixtureMemoryProvider() as never);
+  await svc.memoryProcessor.run({ maxBatches: 50 });
   svc.models.setProvider(provider as never);
   return clock.now().toISOString();
+}
+
+/**
+ * Canned replies for the memory layers, used once while seeding so the test
+ * profile shows episodes and facts. Everything else about seeding runs
+ * through the real code paths.
+ */
+class FixtureMemoryProvider implements ModelProvider {
+  readonly name = "fixture-memory";
+  private n = 0;
+
+  private reply(purpose: string, body: string): string {
+    if (purpose === "memory.gist") {
+      const m = /\(fixture\) ([^"]+)/.exec(body);
+      if (m) return JSON.stringify({ gist: `He told Ava: ${m[1].slice(0, 160)}`, keywords: [], entities: [], importance: 0.4 });
+      return JSON.stringify({
+        gist: "Morning on campus: OS Project 2's parser working, the I-20 errand before winter break, and a Quiz 4 practice set.",
+        keywords: ["os project 2", "i-20", "quiz 4", "practice set"],
+        entities: ["OS Project 2", "I-20", "CMPSC 465", "Quiz 4"],
+        importance: 0.7,
+      });
+    }
+    if (purpose === "memory.facts") {
+      if (body.includes("(fixture)")) return JSON.stringify({ facts: [] });
+      return JSON.stringify({
+        facts: [
+          { statement: "The OS Project 2 parser works", refers_at: null, provenance: "stated", confidence: 0.9, importance: 0.7, keywords: ["os project 2"], entities: ["OS Project 2"], entry_ids: [] },
+          { statement: "The I-20 office is only open weekdays until four", refers_at: null, provenance: "stated", confidence: 0.9, importance: 0.8, keywords: ["i-20", "office hours"], entities: ["I-20 office"], entry_ids: [] },
+          { statement: "Practice problems work better than re-reading slides for quiz prep", refers_at: null, provenance: "stated", confidence: 0.85, importance: 0.6, keywords: ["study", "practice"], entities: ["Quiz 4"], entry_ids: [] },
+        ],
+      });
+    }
+    throw new Error(`fixture memory provider got an unexpected purpose: ${purpose}`);
+  }
+
+  async create(params: Anthropic.MessageCreateParamsNonStreaming, _signal?: AbortSignal, meta?: CallMeta): Promise<Anthropic.Message> {
+    const text = this.reply(meta?.purpose ?? "unknown", JSON.stringify(params.messages ?? ""));
+    return {
+      id: `fixture_${++this.n}`,
+      type: "message",
+      role: "assistant",
+      model: "fixture",
+      content: [{ type: "text", text, citations: null }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: 50, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    } as unknown as Anthropic.Message;
+  }
+
+  async stream(params: Anthropic.MessageCreateParamsStreaming, onText: (delta: string) => void, signal?: AbortSignal, meta?: CallMeta): Promise<Anthropic.Message> {
+    const m = await this.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming, signal, meta);
+    for (const b of m.content) if (b.type === "text") onText(b.text);
+    return m;
+  }
 }
 
 function mulberry32(a: number) {

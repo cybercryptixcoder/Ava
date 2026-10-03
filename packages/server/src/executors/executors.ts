@@ -203,6 +203,14 @@ ${this.context(task.item_id)}`,
       this.svc.cipher.encJson(body),
       this.now(),
     ]);
+    // The work product joins the raw log: his requested artifacts are his words' descendants.
+    const memId = this.svc.memory.append({
+      kind: "artifact",
+      source: "executor",
+      text: `${out.artifact.title}\n\n${typeof body === "string" ? body : JSON.stringify(body)}`,
+      meta: { exec_task_id: taskId, artifact_id: artifactId, kind: task.kind, item_id: task.item_id ?? null },
+    });
+    if (task.item_id) this.svc.memory.link(memId, "touched", "item", task.item_id);
     const sessions = task.sessions_run + 1;
     const more = !out.report.done && sessions < task.max_sessions;
     db.run("UPDATE exec_tasks SET status = ?, sessions_run = ?, progress_note = ?, plan_fit = ?, updated_at = ? WHERE id = ?", [

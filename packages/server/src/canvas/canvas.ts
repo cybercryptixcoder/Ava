@@ -34,7 +34,7 @@ export class Canvas {
   current(forceNew = false): string {
     const { db, clock } = this.svc;
     const last = db.get<{ id: string; last: string | null; started_at: string }>(
-      "SELECT c.id, c.started_at, (SELECT MAX(created_at) FROM turns t WHERE t.conversation_id = c.id) AS last FROM conversations c ORDER BY c.started_at DESC LIMIT 1",
+      "SELECT c.id, c.started_at, (SELECT MAX(recorded_at) FROM entries e WHERE e.kind = 'turn' AND e.session_id = c.id) AS last FROM conversations c ORDER BY c.started_at DESC LIMIT 1",
     );
     const now = clock.now();
     const idle = last ? now.getTime() - new Date(last.last ?? last.started_at).getTime() > Canvas.IDLE_HOURS * 3_600_000 : true;

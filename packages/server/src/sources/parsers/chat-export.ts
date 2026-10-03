@@ -21,6 +21,9 @@ function toIso(v: unknown): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/** Content types whose message text is worth keeping; everything else is skipped. */
+const KEPT_CONTENT_TYPES = ["text", "multimodal_text", "code", "execution_output"];
+
 function textOf(content: unknown): string {
   if (content === null || content === undefined) return "";
   if (typeof content === "string") return content;
@@ -57,7 +60,7 @@ function parseChatGPT(conv: Record<string, unknown>, idx: number): ParsedConvers
     const role = (m.author as { role?: string } | undefined)?.role;
     if (role !== "user" && role !== "assistant") continue;
     const content = m.content as { content_type?: string } | undefined;
-    if (content?.content_type && !["text", "multimodal_text", "code"].includes(content.content_type)) continue;
+    if (content?.content_type && !KEPT_CONTENT_TYPES.includes(content.content_type)) continue;
     const text = textOf(content).trim();
     if (text) messages.push({ role, text, at: toIso(m.create_time) });
   }

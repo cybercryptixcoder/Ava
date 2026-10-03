@@ -7,6 +7,12 @@ import type { EventBus } from "./events";
 import type { Counters, SettingsStore } from "./settings-store";
 import type { ItemStore } from "../state/items";
 import type { EvidenceStore } from "../state/evidence";
+import type { MemoryStore } from "../state/memory";
+import type { Backfill } from "../memory/backfill";
+import type { MemoryProcessor } from "../memory/processor";
+import type { MemorySearch } from "../memory/search";
+import type { Retriever } from "../memory/retriever";
+import type { Embeddings } from "../memory/embeddings";
 import type { BeliefStore } from "../state/beliefs";
 import type { ProposalStore } from "../state/proposals";
 import type { QuestionStore } from "../state/questions";
@@ -46,6 +52,18 @@ export interface Services {
   counters: Counters;
   items: ItemStore;
   evidence: EvidenceStore;
+  /** L0, the raw log. Everything derived points back into it. */
+  memory: MemoryStore;
+  /** One-time resumable migration of existing data into the raw log. */
+  backfill: Backfill;
+  /** Builds episodes, gists and fact keys from uncovered raw entries. */
+  memoryProcessor: MemoryProcessor;
+  /** In-memory (from decrypted rows) keyword index over the log and its layers. */
+  memorySearch: MemorySearch;
+  /** Assembles the context pack for a message (agent or direct). */
+  retriever: Retriever;
+  /** Embeddings behind an adapter: local default, optional hosted, lexical fallback. */
+  embeddings: Embeddings;
   beliefs: BeliefStore;
   proposals: ProposalStore;
   threads: ThreadStore;

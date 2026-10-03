@@ -88,7 +88,7 @@ describe("brain dump to filed items", () => {
     }
     expect(turns[0]).toBe("Good call. The quiz goes first.");
     expect(turns[1]).toBe("The essay comes after.");
-    const row = t.svc.db.get<{ raw_enc: string }>("SELECT raw_enc FROM turns WHERE role = 'ava' ORDER BY created_at DESC, rowid DESC LIMIT 1")!;
+    const row = t.svc.db.get<{ raw_enc: string }>("SELECT raw_enc FROM entries WHERE kind = 'turn' AND role = 'ava' ORDER BY recorded_at DESC, rowid DESC LIMIT 1")!;
     const raw = t.svc.cipher.decOpt(row.raw_enc) ?? "";
     expect(raw).not.toContain("Love that");
     expect(raw).toContain('<show>{"key":"n2"');

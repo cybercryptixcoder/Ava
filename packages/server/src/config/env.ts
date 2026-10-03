@@ -70,6 +70,11 @@ export const ENV_SPEC: EnvVarSpec[] = [
   // Monitoring
   { group: "Monitoring", key: "DEADMAN_PING_URL", description: "Optional external heartbeat URL (e.g. healthchecks.io) pinged after each successful wake, so you hear about it even if the server is down.", where: "https://healthchecks.io" },
   { group: "Monitoring", key: "COLLECTOR_TOKEN", description: "Shared token the activity collector uses to post sessions. Generate any long random string.", where: "openssl rand -hex 24", secret: true, enables: ["source.activity"] },
+
+  // Memory
+  { group: "Memory", key: "EMBEDDINGS_URL", description: "Optional hosted embeddings endpoint (OpenAI-compatible /v1/embeddings). Left unset, memory embeds locally on this machine so nothing leaves the server.", where: "e.g. https://api.openai.com/v1/embeddings" },
+  { group: "Memory", key: "EMBEDDINGS_API_KEY", description: "Key for the hosted embeddings endpoint, if one is configured.", secret: true },
+  { group: "Memory", key: "EMBEDDINGS_MODEL", description: "Model name for the hosted embeddings endpoint.", default: "text-embedding-3-small" },
 ];
 
 let loaded = false;

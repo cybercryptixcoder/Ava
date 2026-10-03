@@ -170,6 +170,7 @@ export class CardStore {
         now,
       ],
     );
+    this.rebalance();
     log.info("card.created", `${c.kind === "do" ? "Do" : c.kind === "pick" ? "Pick" : "Know"} card: ${c.title}`, { card_id: id, source: c.source, ref_id: c.ref_id });
     bus.emit({ type: "state.changed", what: ["cards"] });
     return this.get(id)!;
@@ -377,26 +378,45 @@ export class CardStore {
     return c.priority + (c.time_sensitive ? 100 : 0) + (fresh && (c.source === "filing" || c.source === "proposal") ? 150 : 0) - 15 * c.returns;
   }
 
+  /**
+   * Maintenance, then the invariant: at most max_cards active, visible cards.
+   * What doesn't fit is deferred to a later stack (a future visible_from), so
+   * no invisible pile exists — not even behind a counter. Nothing is deleted;
+   * deferred cards return in priority order once their moment arrives.
+   */
+  private rebalance(): void {
+    const { db, settings, log } = this.svc;
+    const nowIso = this.now().toISOString();
+    db.run("UPDATE cards SET status = 'expired', updated_at = ? WHERE status IN ('active', 'snoozed') AND expires_at IS NOT NULL AND expires_at <= ?", [nowIso, nowIso]);
+    db.run("UPDATE cards SET status = 'active', updated_at = ? WHERE status = 'snoozed' AND snoozed_until <= ?", [nowIso, nowIso]);
+    const s = settings.get();
+    const due = db
+      .all("SELECT * FROM cards WHERE status = 'active' AND visible_from <= ? ORDER BY created_at", [nowIso])
+      .map(rowToCard)
+      .sort((a, b) => this.score(b) - this.score(a));
+    if (due.length <= s.stack.max_cards) return;
+    const when = this.nextStackAfter(new Date(this.now().getTime() + s.stack.min_return_minutes * 60_000)).when;
+    for (const c of due.slice(s.stack.max_cards)) {
+      db.run("UPDATE cards SET visible_from = ?, updated_at = ? WHERE id = ?", [when.toISOString(), nowIso, c.id]);
+      log.info("card.deferred", `"${c.title}" waits for the next stack at ${formatClock(when, settings.tz())}; the stack stays at ${s.stack.max_cards}`, { card_id: c.id });
+    }
+  }
+
   private visible(): Card[] {
-    const { db } = this.svc;
+    this.rebalance();
     const now = this.now().toISOString();
-    db.run("UPDATE cards SET status = 'expired', updated_at = ? WHERE status IN ('active', 'snoozed') AND expires_at IS NOT NULL AND expires_at <= ?", [now, now]);
-    db.run("UPDATE cards SET status = 'active', updated_at = ? WHERE status = 'snoozed' AND snoozed_until <= ?", [now, now]);
-    return db
+    return this.svc.db
       .all("SELECT * FROM cards WHERE status = 'active' AND visible_from <= ? ORDER BY created_at", [now])
       .map(rowToCard)
       .sort((a, b) => this.score(b) - this.score(a));
   }
 
   stack(): StackView {
-    const { scheduler, settings } = this.svc;
-    const all = this.visible();
-    const max = settings.get().stack.max_cards;
-    const cards = all.slice(0, max).map((c) => this.view(c));
+    const { scheduler } = this.svc;
+    const cards = this.visible().map((c) => this.view(c));
     const next = scheduler.pending({ from: this.now() }).find((w) => w.kind !== "event" && w.kind !== "executor");
     return {
       cards,
-      waiting: Math.max(0, all.length - cards.length),
       all_clear: cards.length ? null : { next_check_in: next ? scheduler.view(next) : null },
       morning: this.morning(),
     };
@@ -559,6 +579,8 @@ export class CardStore {
           c.id,
         ]);
         if (messageId) await responder.respond(messageId, "not_now");
+        this.rebalance();
+        this.logResponse(c, "not_now", `Back ${at.why}`, null);
         log.info("card.snoozed", `Not now: "${c.title}". Back ${at.why}`, { card_id: c.id, until: at.when.toISOString() });
         bus.emit({ type: "state.changed", what: ["cards"] });
         return { ...result, card: this.view(this.get(c.id)!), summary: `Back ${at.why}`, returns_at: at.when.toISOString() };
@@ -579,9 +601,23 @@ export class CardStore {
       }
     }
     this.svc.db.run("UPDATE cards SET status = ?, response = ?, responded_at = ?, updated_at = ? WHERE id = ?", [status, response, this.now().toISOString(), this.now().toISOString(), c.id]);
+    this.rebalance();
+    this.logResponse(c, response, result.summary, optionKey);
     log.info("card.response", `${response === "yes" ? "Yes" : response === "already_done" ? "Already done" : "Stop suggesting this"}: "${c.title}"${result.summary ? ` (${result.summary})` : ""}`, { card_id: c.id, response, option: optionKey ?? null });
     bus.emit({ type: "state.changed", what: ["cards", "items"] });
     return { ...result, card: this.view(this.get(c.id)!) };
+  }
+
+  /** Every response is recorded in the raw log, with what it touched. */
+  private logResponse(c: Card, response: CardResponse, summary: string, optionKey?: string | null): void {
+    const entryId = this.svc.memory.append({
+      kind: "card_response",
+      source: "system",
+      text: `"${c.title}" — ${response === "yes" ? "yes" : response === "not_now" ? "not now" : response === "already_done" ? "already done" : "stop suggesting this"}${summary ? ` (${summary})` : ""}`,
+      meta: { card_id: c.id, response, option: optionKey ?? null, card_kind: c.kind, source: c.source },
+    });
+    this.svc.memory.link(entryId, "about", "card", c.id);
+    for (const itemId of c.item_ids) this.svc.memory.link(entryId, "touched", "item", itemId);
   }
 
   private async act(c: Card, a: Act): Promise<{ summary: string; open: CardResult["open"]; exec_task_id: string | null; keepOpen?: boolean }> {
@@ -620,13 +656,28 @@ export class CardStore {
     }
   }
 
+  /** The next moment a deferred or snoozed card can come back: Ava's next check-in after `from`, out of quiet hours. */
+  private nextStackAfter(from: Date): { when: Date; viaCheckIn: boolean } {
+    const { settings, scheduler } = this.svc;
+    const s = settings.get();
+    const tz = settings.tz();
+    const w = scheduler.pending({ from }).find((x) => x.kind !== "event" && x.kind !== "executor");
+    let when = w ? new Date(w.due_at) : from;
+    let viaCheckIn = !!w;
+    if (inQuietHours(when, tz, s.quiet_hours.start, s.quiet_hours.end)) {
+      when = nextWakingInstant(when, tz, s.quiet_hours.start, s.quiet_hours.end);
+      viaCheckIn = false;
+    }
+    return { when, viaCheckIn };
+  }
+
   /**
    * "Not now": Ava picks when it comes back, never sooner than the minimum.
    * Normally at her next check-in after that; after a couple of returns, the
    * next morning stack. Never deleted.
    */
   private returnTime(c: Card): { when: Date; why: string } {
-    const { settings, scheduler } = this.svc;
+    const { settings } = this.svc;
     const s = settings.get();
     const tz = settings.tz();
     const min = new Date(this.now().getTime() + s.stack.min_return_minutes * 60_000);
@@ -635,10 +686,8 @@ export class CardStore {
       const when = m > min ? m : new Date(min);
       return { when, why: `in the morning stack, ${formatClock(when, tz)}` };
     }
-    const w = scheduler.pending({ from: min }).find((x) => x.kind !== "event" && x.kind !== "executor");
-    let when = w ? new Date(w.due_at) : min;
-    if (inQuietHours(when, tz, s.quiet_hours.start, s.quiet_hours.end)) when = nextWakingInstant(when, tz, s.quiet_hours.start, s.quiet_hours.end);
-    return { when, why: `at ${formatClock(when, tz)}${w && when.getTime() === Date.parse(w.due_at) ? ", my next check-in" : ""}` };
+    const { when, viaCheckIn } = this.nextStackAfter(min);
+    return { when, why: `at ${formatClock(when, tz)}${viaCheckIn ? ", my next check-in" : ""}` };
   }
 
   /** Items it was about closed: the card has done its job. */
@@ -646,12 +695,16 @@ export class CardStore {
     const { db } = this.svc;
     const now = this.now().toISOString();
     const n = db.run(`UPDATE cards SET status = 'done', response = 'item_closed', updated_at = ? WHERE status IN ('active', 'snoozed') AND source != 'filing' AND item_ids LIKE ?`, [now, `%"${itemId}"%`]).changes;
-    if (n) this.svc.bus.emit({ type: "state.changed", what: ["cards"] });
+    if (n) {
+      this.rebalance();
+      this.svc.bus.emit({ type: "state.changed", what: ["cards"] });
+    }
     return n;
   }
 
   closeRef(source: CardSource, refId: string, status: "done" | "expired" = "done"): void {
     this.svc.db.run("UPDATE cards SET status = ?, updated_at = ? WHERE source = ? AND ref_id = ? AND status IN ('active', 'snoozed')", [status, this.now().toISOString(), source, refId]);
+    this.rebalance();
   }
 
   // -------------------------------------------------------------------------

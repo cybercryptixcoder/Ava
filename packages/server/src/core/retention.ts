@@ -1,9 +1,11 @@
 import type { Services } from "./services";
 
 /**
- * Retention: raw high-volume data (activity window titles, raw audio, raw
- * imported text, model call bodies, old snapshots) is deleted after a short
- * configurable period once distilled. Distilled sessions and beliefs stay.
+ * Retention: raw high-volume data (activity window titles, raw audio, model
+ * call bodies, old snapshots) is deleted after a short configurable period
+ * once distilled. Text records of his words and Ava's replies — turns,
+ * transcripts, imports, sent mail, artifacts — are the memory: they are
+ * never purged. Distilled sessions and beliefs stay.
  */
 export function runRetention(svc: Services): Record<string, number> {
   const { db, clock, settings, evidence, audio, log } = svc;
@@ -30,7 +32,7 @@ export function runRetention(svc: Services): Record<string, number> {
 
 /** Everything Ava knows about Shreyas, decrypted, as one JSON document. */
 export function exportEverything(svc: Services): Record<string, unknown> {
-  const { db, cipher, items, beliefs, rules, messages, evidence } = svc;
+  const { db, items, beliefs, rules, messages, evidence } = svc;
   return {
     exported_at: svc.clock.now().toISOString(),
     profile: svc.cfg.profile,
@@ -44,14 +46,7 @@ export function exportEverything(svc: Services): Record<string, unknown> {
     plans: db.all("SELECT * FROM plans ORDER BY created_at"),
     questions: db.all("SELECT * FROM questions ORDER BY created_at"),
     evidence: evidence.list({ limit: 100000 }),
-    turns: db.all<{ id: string; conversation_id: string; role: string; mode: string; text_enc: string; created_at: string }>("SELECT * FROM turns ORDER BY created_at").map((t) => ({
-      id: t.id,
-      conversation_id: t.conversation_id,
-      role: t.role,
-      mode: t.mode,
-      text: cipher.decOpt(t.text_enc),
-      created_at: t.created_at,
-    })),
+    entries: svc.memory.list({ limit: 100000, includeDeleted: true }),
     style_notes: db.all("SELECT * FROM style_notes"),
     activity_sessions: db.all("SELECT id, device, app, label, category, started_at, ended_at, active_seconds, item_id FROM activity_sessions ORDER BY started_at"),
     artifacts: db.all<{ id: string }>("SELECT id FROM artifacts").map((a) => svc.executors.artifact(a.id)),

@@ -12,6 +12,7 @@ import {
 import type { Db } from "../db/db";
 import { j, js, newId } from "../db/db";
 import type { Clock } from "../core/clock";
+import type { MemoryStore } from "./memory";
 
 export type ItemChangeKind = "created" | "updated" | "status" | "completed" | "deleted";
 export interface ItemChange {
@@ -76,6 +77,8 @@ export class ItemStore {
   constructor(
     private db: Db,
     private clock: Clock,
+    /** The raw log, so item and calendar changes land in it as events. */
+    private memory: MemoryStore,
   ) {}
 
   onChange(fn: (c: ItemChange) => void): void {
@@ -319,6 +322,7 @@ export class ItemStore {
     return { item, created: false, changed: true };
   }
 
+  /** The item's own audit, mirrored into the raw log as a change event. */
   private history(itemId: string, field: string, oldV: unknown, newV: unknown, via: string) {
     this.db.run("INSERT INTO item_history (item_id, at, field, old_value, new_value, via) VALUES (?, ?, ?, ?, ?, ?)", [
       itemId,
@@ -328,6 +332,14 @@ export class ItemStore {
       newV === null || newV === undefined ? null : String(newV),
       via,
     ]);
+    const title = this.get(itemId)?.title ?? itemId;
+    const id = this.memory.append({
+      kind: "item_event",
+      source: "system",
+      text: `${title} · ${field}: ${oldV === null || oldV === undefined ? "—" : String(oldV)} → ${newV === null || newV === undefined ? "—" : String(newV)}`,
+      meta: { item_id: itemId, field, old_value: oldV ?? null, new_value: newV ?? null, via },
+    });
+    this.memory.link(id, "touched", "item", itemId);
   }
 
   historyFor(itemId: string, limit = 50): { at: string; field: string; old_value: string | null; new_value: string | null; via: string }[] {
