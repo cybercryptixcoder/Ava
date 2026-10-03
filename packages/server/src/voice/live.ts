@@ -9,9 +9,15 @@ import { planSpeech } from "./speech-adapt";
 import type { StreamSession } from "./tts/types";
 import type { SttStream } from "./stt/types";
 import { TurnDetector, type TurnSignal } from "./turn-detector";
+import type { ContextPack } from "../memory/retriever";
 
 export const LIVE_IN_RATE = 16000;
 export const LIVE_OUT_RATE = 24000;
+
+/** Resolve a speculatively started pack, waiting at most `grace` ms; null means fall back to core + window. */
+export function readyPackOrNull(promise: Promise<ContextPack | null>, grace: number): Promise<ContextPack | null> {
+  return Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), grace))]);
+}
 
 type Outbound = (msg: Record<string, unknown> | Buffer) => void;
 
@@ -33,6 +39,10 @@ interface Run {
   sentCues: Set<string>;
   firstAudioAt: number | null;
   done: boolean;
+  /** Speculative retrieval, kicked off on the partial transcript. */
+  packPromise: Promise<ContextPack | null> | null;
+  packStart: number;
+  pack: ContextPack | null;
 }
 
 /**
@@ -184,7 +194,19 @@ export class LiveSession {
       sentCues: new Set(),
       firstAudioAt: null,
       done: false,
+      packPromise: null,
+      packStart: 0,
+      pack: null,
     };
+    // Speculative retrieval: start gathering memory on the partial transcript,
+    // so the pack is usually ready before the reply's prompt is assembled.
+    run.packPromise = svc.retriever
+      .retrieve(text, { budgetTokens: settings.get().memory.context_budget_tokens })
+      .catch((e) => {
+        log.warn("memory.retrieve", `Live retrieval failed: ${(e as Error).message}`);
+        return null;
+      });
+    run.packStart = Date.now();
     this.run = run;
     if (run.confirmed) {
       this.turnSeq++;
@@ -283,13 +305,14 @@ export class LiveSession {
 
     const llmStart = Date.now();
     try {
+      const pack = await this.takePack(run);
       const messages: Anthropic.MessageParam[] = [
-        ...conversation.history(this.convId, 12).slice(0, speculative ? undefined : -1),
+        ...conversation.window(this.convId, speculative ? 0 : 1),
         {
           role: "user",
           content: `${await conversation.contextBlock(this.convId, text, true, [
             "Live mode: a real-time spoken conversation, like a call. Keep it conversational and brief unless he's riffing. Start with the point. No fillers ('um', 'let me think', 'great question'). What he tells you is filed into his stack; don't describe it back.",
-          ])}\n\n${text}`,
+          ], pack)}\n\n${text}`,
         },
       ];
       await models.stream(
@@ -338,6 +361,20 @@ export class LiveSession {
     if (this.run !== run) return;
     const spoken = run.spokenSentences.join(" ");
     const t = this.svc.conversation.saveTurn({ convId: this.convId, role: "ava", mode: "live", text: spoken, raw: run.rawAll, affirmation: affirmingSentences(spoken).length > 0 });
+    // Grounding: which refs the spoken reply drew on, logged with its retrieval cost.
+    const used = run.pack?.entries_used ?? [];
+    if (used.length) this.svc.memory.mergeMeta(t.id, { memory_used: used.slice(0, 30) });
+    if (run.pack) {
+      this.svc.log.info("memory.grounding", `Live reply drew on ${used.length} memory ${used.length === 1 ? "entry" : "entries"} (pack ${run.pack.tokens} tokens, retrieval ${Math.round(run.stages.retrieval_ms ?? 0)} ms)`, {
+        turn_id: t.id,
+        refs: used.slice(0, 30),
+        pack_tokens: run.pack.tokens,
+        retrieval_ms: run.stages.retrieval_ms ?? null,
+        via: run.pack.via,
+      });
+    } else {
+      this.svc.log.info("memory.grounding", "Live reply answered from core + window (retrieval not ready in time or nothing relevant)", { turn_id: t.id });
+    }
     this.out({ type: "turn_done", turn: this.turnSeq, ava_turn: t });
     this.flushCues(run);
     this.saveLatency(run);
@@ -345,6 +382,18 @@ export class LiveSession {
     this.setState("listening");
     // Anything that changes state goes through chips on screen, extracted in the background.
     void this.backgroundExtract(run.text);
+  }
+
+  /** The pack retrieval started on the partial transcript; falls back to core + window when it isn't ready in time. */
+  private async takePack(run: Run): Promise<ContextPack | null> {
+    const promise = run.packPromise;
+    if (!promise) return null;
+    const pack = await readyPackOrNull(promise, this.svc.settings.get().memory.live_grace_ms);
+    if (pack) {
+      run.pack = pack;
+      run.stages.retrieval_ms = Date.now() - run.packStart;
+    }
+    return pack;
   }
 
   private async backgroundExtract(text: string) {

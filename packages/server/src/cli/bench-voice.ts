@@ -85,9 +85,13 @@ async function sttStage(app: ReturnType<typeof buildApp>, pcm: Buffer): Promise<
   });
 }
 
-async function llmStage(app: ReturnType<typeof buildApp>, model: string, text: string): Promise<{ ttft: number; first_sentence: number; sentence: string }> {
+async function llmStage(app: ReturnType<typeof buildApp>, model: string, text: string): Promise<{ ttft: number; first_sentence: number; sentence: string; retrieval: number }> {
   const { conversation, canvas, models } = app.svc;
   const conv = canvas.current();
+  // Same retrieval stage as a real live turn: measured, then folded into the prompt.
+  const rStart = Date.now();
+  const pack = await app.svc.retriever.retrieve(text, { budgetTokens: app.svc.settings.get().memory.context_budget_tokens });
+  const retrieval = Date.now() - rStart;
   let first = -1;
   let firstSentence = -1;
   let sentence = "";
@@ -103,7 +107,7 @@ async function llmStage(app: ReturnType<typeof buildApp>, model: string, text: s
         maxTokens: 300,
         lowLatency: true,
         system: await conversation.systemBlocks(true),
-        messages: [{ role: "user", content: `${await conversation.contextBlock(conv, text, true, ["Live mode benchmark."])}\n\n${text}` }],
+        messages: [{ role: "user", content: `${await conversation.contextBlock(conv, text, true, ["Live mode benchmark."], pack)}\n\n${text}` }],
         cacheMessages: true,
         signal: ac.signal,
       },
@@ -119,7 +123,7 @@ async function llmStage(app: ReturnType<typeof buildApp>, model: string, text: s
       },
     )
     .catch(() => {});
-  return { ttft: first, first_sentence: firstSentence, sentence };
+  return { ttft: first, first_sentence: firstSentence, sentence, retrieval };
 }
 
 async function ttsStage(app: ReturnType<typeof buildApp>, sentence: string): Promise<{ connect: number; ttfa: number }> {
@@ -172,7 +176,7 @@ async function main() {
       const llm = await llmStage(app, m, stt.text);
       const tts = await ttsStage(app, llm.sentence || "Here's where I'd start.");
       const total = stt.eot_detect_ms + llm.first_sentence + tts.ttfa;
-      const row = { run: r + 1, model: m, eot_detect_ms: stt.eot_detect_ms, llm_ttft_ms: llm.ttft, first_sentence_ms: llm.first_sentence, tts_connect_ms: tts.connect, tts_ttfa_ms: tts.ttfa, total_ms: total };
+      const row = { run: r + 1, model: m, eot_detect_ms: stt.eot_detect_ms, retrieval_ms: llm.retrieval, llm_ttft_ms: llm.ttft, first_sentence_ms: llm.first_sentence, tts_connect_ms: tts.connect, tts_ttfa_ms: tts.ttfa, total_ms: total };
       rows.push(row);
       svc.db.run("INSERT INTO latency_samples (id, at, mode, model, tts, stt, stages, total_ms) VALUES (?, ?, 'bench', ?, ?, ?, ?, ?)", [
         newId("lat"),
