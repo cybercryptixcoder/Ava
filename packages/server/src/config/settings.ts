@@ -125,6 +125,8 @@ export const SettingsSchema = z.object({
     }),
     /** Semantic search provider: auto picks local, then hosted, then the built-in lexical fallback. */
     embeddings: z.object({ provider: z.enum(["auto", "local", "hosted", "lexical"]) }),
+    /** Size of the retrieval pack the planner pulls for its own query. */
+    planner_budget_tokens: z.number().min(500).max(8000),
     /** Skip retrieval entirely for messages that clearly need no memory. */
     fast_path: z.boolean(),
     /** The retriever runs as a cheap-model sub-agent; "direct" skips the agent. */
@@ -216,6 +218,7 @@ export function defaultSettings(envDefaults: {
       recent_budget_tokens: 3000,
       ranking: { relevance: 1, recency: 0.35, importance: 0.25, semantic: 0.5, half_life_days: 30 },
       embeddings: { provider: "auto" },
+      planner_budget_tokens: 2500,
       fast_path: true,
       retriever: { mode: "agent", max_rounds: 4 },
     },

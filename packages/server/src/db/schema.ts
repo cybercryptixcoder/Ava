@@ -541,4 +541,14 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX memory_embeddings_model ON memory_embeddings(model, ref_kind);
   `,
+  /* 6: the core (L3): versioned blocks of durable knowledge, rebuilt during consolidation */ `
+  CREATE TABLE cores (
+    id TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
+    text_enc TEXT NOT NULL,
+    tokens INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX cores_version ON cores(version DESC);
+  `,
 ];

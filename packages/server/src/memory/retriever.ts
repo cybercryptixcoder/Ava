@@ -49,6 +49,7 @@ export interface ContextPack {
 }
 
 const estTokens = (s: string) => Math.ceil(s.length / 4);
+export { estTokens };
 
 const ACK = /^(ok(ay)?|k|thanks|thank you|ty|cool|nice|got it|sure|yep?|nope?|no|lol|haha+|done|great|perfect|alright|right|hm+|mm+)[.!\s]*$/i;
 
@@ -383,4 +384,17 @@ export class Retriever {
     if (!e || e.deleted_at) return null;
     return { id: e.id, kind: e.kind, text: e.text.slice(0, 700), at: e.occurred_at };
   }
+}
+
+/** The <memory> block for prompts: what retrieval found, with refs so replies can be grounded. */
+export function renderPack(pack: ContextPack | null): string {
+  if (!pack || pack.skipped) return "";
+  const parts: string[] = [];
+  if (pack.gists.length) parts.push(`What's been going on:\n${pack.gists.map((g) => `- [${g.id}] ${g.at.slice(0, 10)}: ${g.gist}`).join("\n")}`);
+  if (pack.facts.length) {
+    parts.push(`Known (current unless marked superseded):\n${pack.facts.map((f) => `- [${f.id}] ${f.statement}${f.valid_to || f.superseded_by ? ` (superseded ${String(f.valid_to ?? f.at).slice(0, 10)})` : ""}`).join("\n")}`);
+  }
+  if (pack.excerpts.length) parts.push(`From his own words:\n${pack.excerpts.map((e) => `- [${e.id}] ${e.at.slice(0, 16).replace("T", " ")}: "${e.text.slice(0, 240)}"`).join("\n")}`);
+  if (!parts.length) return "";
+  return `<memory>\n${parts.join("\n\n")}\n</memory>`;
 }
