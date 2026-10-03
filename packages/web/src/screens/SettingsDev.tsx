@@ -26,6 +26,9 @@ interface PRun {
 interface MemoryStatus {
   entries: number;
   by_kind: Record<string, number>;
+  episodes: number;
+  facts: number;
+  pending: number;
   backfill: {
     phase: string;
     copied: { turns: number; evidence: number; history: number };
@@ -154,7 +157,8 @@ export function DevSection() {
         {mem ? (
           <>
             <p className="band-note">
-              Raw log: <span className="num">{mem.entries}</span> entries.{" "}
+              Raw log: <span className="num">{mem.entries}</span> entries · <span className="num">{mem.episodes}</span> episodes · <span className="num">{mem.facts}</span> facts
+              {mem.pending ? ` · ${mem.pending} waiting to process` : ""}.{" "}
               {mem.backfill.phase === "done"
                 ? mem.backfill.copied.turns + mem.backfill.copied.evidence + mem.backfill.copied.history === 0
                   ? "Nothing older needed importing; the log starts from now."

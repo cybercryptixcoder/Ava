@@ -117,6 +117,7 @@ export class Backfill {
     st.copied.turns += rows.length;
     if (rows.length < BATCH) st.phase = "evidence";
     memory.setState("backfill", st);
+    if (rows.length) this.svc.memoryProcessor.notify();
     return true;
   }
 

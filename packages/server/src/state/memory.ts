@@ -41,11 +41,18 @@ export interface EntryLink {
 }
 
 export class MemoryStore {
+  private appended: (() => void)[] = [];
+
   constructor(
     private db: Db,
     private clock: Clock,
     private cipher: Cipher,
   ) {}
+
+  /** Listeners fire after every append — the derived layers watch the log, not the writers. */
+  onAppend(fn: () => void): void {
+    this.appended.push(fn);
+  }
 
   /**
    * Append one entry. This is the only write to the log; everything else in
@@ -80,6 +87,13 @@ export class MemoryStore {
         JSON.stringify(e.meta ?? {}),
       ],
     );
+    for (const fn of this.appended) {
+      try {
+        fn();
+      } catch {
+        /* watchers are best-effort; the log entry is already safe */
+      }
+    }
     return id;
   }
 

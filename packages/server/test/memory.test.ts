@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { atLocal } from "@ava/shared";
-import { makeApp, type TestApp } from "./helpers";
+import { makeApp, ScriptedProvider, type TestApp } from "./helpers";
 
 const NY = "America/New_York";
 let t: TestApp;
@@ -125,5 +125,94 @@ describe("the raw log", () => {
     expect(evs).toHaveLength(1);
     expect(evs[0].text).toContain("Legacy task");
     expect(t.svc.memory.entriesFor("item", it.id)).toContain(evs[0].id);
+  });
+});
+
+describe("episodes and facts", () => {
+  const scripted = () =>
+    new ScriptedProvider({
+      "memory.gist": { gist: "He has to get the I-20 signed and asked what the office hours are.", keywords: ["i-20", "office hours"], entities: ["I-20 office"], importance: 0.6 },
+      "memory.facts": {
+        facts: [
+          { statement: "The I-20 office is only open weekdays until 4", refers_at: null, provenance: "stated", confidence: 0.9, importance: 0.8, keywords: ["i-20"], entities: ["I-20 office"], entry_ids: [] },
+        ],
+      },
+    });
+
+  it("builds an episode with a gist and add-only facts from uncovered entries", async () => {
+    t = makeApp({ at: atLocal("2026-10-05", "10:00", NY).toISOString(), provider: scripted() });
+    const conv = t.svc.canvas.current(true);
+    const u = t.svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: "I need to get the I-20 signed before winter break; the office is only open weekdays until four.", input_kind: "dictated" });
+    t.svc.conversation.saveTurn({ convId: conv, role: "ava", mode: "async", text: "Noted." });
+    expect(t.svc.memoryProcessor.pending()).toBe(2);
+
+    const out = await t.svc.memoryProcessor.run();
+    expect(out).toMatchObject({ batches: 1, episodes: 1, facts: 1, stopped: null });
+    expect(t.svc.memoryProcessor.pending()).toBe(0);
+
+    const ep = t.svc.db.get<{ id: string; gist_enc: string; keywords_enc: string }>("SELECT * FROM episodes LIMIT 1")!;
+    expect(t.svc.cipher.decOpt(ep.gist_enc)).toContain("I-20");
+    expect(t.svc.cipher.decJson(ep.keywords_enc, [])).toContain("i-20");
+    const covered = t.svc.db.all<{ entry_id: string }>("SELECT entry_id FROM episode_entries WHERE episode_id = ? ORDER BY position", [ep.id]);
+    expect(covered.map((c) => c.entry_id)).toEqual([u.id, t.svc.conversation.turns(conv, 10)[1].id]);
+
+    const f = t.svc.db.get<{ id: string; statement_enc: string }>("SELECT * FROM facts LIMIT 1")!;
+    expect(t.svc.cipher.decOpt(f.statement_enc)).toContain("weekdays until 4");
+    const links = t.svc.db.all<{ entry_id: string }>("SELECT entry_id FROM fact_entries WHERE fact_id = ?", [f.id]);
+    expect(links.map((l) => l.entry_id)).toEqual([u.id]); // defaulted to the whole batch, his side only
+
+    // Add-only: running again changes nothing.
+    const again = await t.svc.memoryProcessor.run();
+    expect(again.batches).toBe(0);
+    expect(t.svc.memoryProcessor.facts()).toBe(1);
+    expect(t.svc.memoryProcessor.episodes()).toBe(1);
+  });
+
+  it("joins a continuing conversation to its recent episode and marks the gist stale", async () => {
+    t = makeApp({ at: atLocal("2026-10-05", "10:00", NY).toISOString(), provider: scripted() });
+    const conv = t.svc.canvas.current(true);
+    t.svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: "First thought about the I-20.", input_kind: "dictated" });
+    await t.svc.memoryProcessor.run();
+    t.clock.advance(10 * 60_000);
+    t.svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: "Actually, also check the office hours.", input_kind: "dictated" });
+    const out = await t.svc.memoryProcessor.run();
+    expect(out.episodes).toBe(1);
+    expect(t.svc.memoryProcessor.episodes()).toBe(1); // same episode, extended
+    const ep = t.svc.db.get<{ stale: number }>("SELECT stale FROM episodes LIMIT 1")!;
+    expect(ep.stale).toBe(1); // consolidation will regenerate the gist from raw
+    const n = t.svc.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM episode_entries")!.n;
+    expect(n).toBe(2);
+  });
+
+  it("waits for a model key instead of losing anything", async () => {
+    t = makeApp({ at: atLocal("2026-10-05", "10:00", NY).toISOString(), provider: null });
+    const conv = t.svc.canvas.current(true);
+    t.svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: "Keep this until a key exists.", input_kind: "dictated" });
+    const out = await t.svc.memoryProcessor.run();
+    expect(out.stopped).toBe("no model key");
+    expect(t.svc.memoryProcessor.pending()).toBe(1);
+    // A key arrives later; the raw entry is still there and gets processed.
+    t.svc.models.setProvider(scripted() as never);
+    const out2 = await t.svc.memoryProcessor.run();
+    expect(out2.batches).toBe(1);
+    expect(t.svc.memoryProcessor.pending()).toBe(0);
+    expect(t.svc.memoryProcessor.episodes()).toBe(1);
+  });
+
+  it("gists always come from raw entries, never from another gist", async () => {
+    const provider = scripted();
+    t = makeApp({ at: atLocal("2026-10-05", "10:00", NY).toISOString(), provider });
+    const conv = t.svc.canvas.current(true);
+    t.svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: "RAW-SENTINEL: the exact original words.", input_kind: "dictated" });
+    await t.svc.memoryProcessor.run();
+    // Poison the gist; a regeneration must not read it.
+    t.svc.db.run("UPDATE episodes SET gist_enc = ?", [t.svc.cipher.encrypt("POISONED GIST")]);
+    t.svc.db.run("UPDATE episodes SET stale = 1");
+    // Consolidation (m5) does the regeneration; check the processor's inputs here instead:
+    const calls = provider.calls.filter((c) => c.purpose === "memory.gist");
+    expect(calls).toHaveLength(1);
+    const input = JSON.stringify(calls[0].params);
+    expect(input).toContain("RAW-SENTINEL");
+    expect(input).not.toContain("POISONED GIST");
   });
 });
