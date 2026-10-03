@@ -176,12 +176,12 @@ test("memory: search reaches the gists and facts, and the core and housekeeping 
   await page.goto("/");
   await openMenu(page, "Memory");
   await page.locator(".mem-search input").fill("I-20");
-  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.locator(".mem-row-text").filter({ hasText: /I-20|i-20/ }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Clear" }).click();
-  await page.getByRole("radio", { name: "Facts" }).click();
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await page.getByRole("radio", { name: "Facts", exact: true }).click();
   await expect(page.locator(".mem-row, .empty").first()).toBeVisible();
-  await page.getByRole("radio", { name: "Core" }).click();
+  await page.getByRole("radio", { name: "Core", exact: true }).click();
   await expect(page.getByText("The core — what Ava durably knows")).toBeVisible();
   await expect(page.getByText("Housekeeping")).toBeVisible();
 });
