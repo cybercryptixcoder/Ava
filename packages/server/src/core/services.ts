@@ -9,6 +9,7 @@ import type { ItemStore } from "../state/items";
 import type { EvidenceStore } from "../state/evidence";
 import type { MemoryStore } from "../state/memory";
 import type { Backfill } from "../memory/backfill";
+import type { MemoryProcessor } from "../memory/processor";
 import type { BeliefStore } from "../state/beliefs";
 import type { ProposalStore } from "../state/proposals";
 import type { QuestionStore } from "../state/questions";
@@ -52,6 +53,8 @@ export interface Services {
   memory: MemoryStore;
   /** One-time resumable migration of existing data into the raw log. */
   backfill: Backfill;
+  /** Builds episodes, gists and fact keys from uncovered raw entries. */
+  memoryProcessor: MemoryProcessor;
   beliefs: BeliefStore;
   proposals: ProposalStore;
   threads: ThreadStore;

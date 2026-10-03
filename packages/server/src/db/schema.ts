@@ -478,4 +478,55 @@ export const MIGRATIONS: string[] = [
 
   CREATE TABLE memory_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
   `,
+  /* 4: episodes, gists and fact keys — the first derived layer */ `
+  CREATE TABLE episodes (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    session_id TEXT,
+    start_at TEXT NOT NULL,
+    end_at TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    gist_enc TEXT,
+    keywords_enc TEXT,
+    entities_enc TEXT,
+    importance REAL NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    stale INTEGER NOT NULL DEFAULT 0,
+    revised_at TEXT
+  );
+  CREATE INDEX episodes_span ON episodes(start_at);
+  CREATE INDEX episodes_session ON episodes(session_id, end_at);
+  CREATE TABLE episode_entries (
+    episode_id TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (episode_id, entry_id)
+  );
+  CREATE INDEX episode_entries_entry ON episode_entries(entry_id);
+
+  CREATE TABLE facts (
+    id TEXT PRIMARY KEY,
+    statement_enc TEXT NOT NULL,
+    keywords_enc TEXT,
+    entities_enc TEXT,
+    refers_at TEXT,
+    recorded_at TEXT NOT NULL,
+    valid_from TEXT,
+    valid_to TEXT,
+    superseded_by TEXT,
+    canonical_id TEXT,
+    provenance TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.8,
+    importance REAL NOT NULL DEFAULT 0.5,
+    thread_id TEXT,
+    item_id TEXT,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'current',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX facts_recorded ON facts(recorded_at);
+  CREATE INDEX facts_status ON facts(status);
+  CREATE TABLE fact_entries (fact_id TEXT NOT NULL, entry_id TEXT NOT NULL, PRIMARY KEY (fact_id, entry_id));
+  CREATE INDEX fact_entries_entry ON fact_entries(entry_id);
+  `,
 ];
