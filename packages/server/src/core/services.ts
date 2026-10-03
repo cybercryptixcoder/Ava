@@ -17,6 +17,7 @@ import type { Core } from "../memory/core";
 import type { Contradictor } from "../memory/contradict";
 import type { Consolidation } from "../memory/consolidate";
 import type { ForgetFlow } from "../memory/forget";
+import type { MemoryEval } from "../memory/eval";
 import type { BeliefStore } from "../state/beliefs";
 import type { ProposalStore } from "../state/proposals";
 import type { QuestionStore } from "../state/questions";
@@ -76,6 +77,8 @@ export interface Services {
   consolidation: Consolidation;
   /** The forget flow: resolution, preview and the only deletion path. */
   forgetFlow: ForgetFlow;
+  /** The graded memory evaluation: nightly + manual, replays and cleanups included. */
+  memoryEval: MemoryEval;
   beliefs: BeliefStore;
   proposals: ProposalStore;
   threads: ThreadStore;

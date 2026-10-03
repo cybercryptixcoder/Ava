@@ -37,6 +37,13 @@ interface MemoryStatus {
     finished_at: string | null;
   };
 }
+interface MemoryStats {
+  avg_context_tokens: number | null;
+  avg_retrieval_ms: number | null;
+  cache_hit_rate: number | null;
+  calls_considered: number;
+  evals: { id: string; at: string; via: string; passed: number; total: number; duration_ms: number | null }[];
+}
 
 const STAGE_LABEL: Record<string, string> = {
   eot_detect_ms: "End of speech to end of turn",
@@ -88,6 +95,7 @@ export function DevSection() {
   const { data: pstat } = useApi<{ stale: boolean; cases: number; voice_hash: string; last_run_hash: string | null }>("/api/personality/status");
   const { data: runs } = useApi<PRun[]>("/api/personality/runs");
   const { data: mem } = useApi<MemoryStatus>("/api/memory/status");
+  const { data: memStats } = useApi<MemoryStats>("/api/memory/stats");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ran, setRan] = useState<{ kind: string; due_at: string }[]>([]);
@@ -173,6 +181,30 @@ export function DevSection() {
                 </Button>
               </div>
             ) : null}
+            {memStats ? (
+              <p className="band-note">
+                Per conversation reply: ~<span className="num">{memStats.avg_context_tokens ?? "–"}</span> input tokens ({memStats.calls_considered} recent calls)
+                {memStats.cache_hit_rate !== null ? <> · prompt-cache hit <span className="num">{Math.round(memStats.cache_hit_rate * 100)}%</span></> : null}
+                {memStats.avg_retrieval_ms !== null ? <> · retrieval ~<span className="num">{memStats.avg_retrieval_ms}</span> ms</> : null}.
+              </p>
+            ) : null}
+            <p className="band-note">
+              Memory evaluation:{" "}
+              {memStats?.evals.length
+                ? `${memStats.evals[0].passed}/${memStats.evals[0].total} on the last ${memStats.evals[0].via === "consolidation" ? "nightly" : memStats.evals[0].via} run · history ${memStats.evals
+                    .slice(0, 8)
+                    .map((e) => `${e.passed}/${e.total}`)
+                    .join(" · ")}`
+                : "no graded runs yet — it runs nightly with consolidation, or run one now."}
+            </p>
+            <div className="row-actions">
+              <Button size="sm" kind="quiet" busy={busy === "eval"} onClick={() => void act("eval", () => api.post("/api/memory/eval/run", {}))}>
+                Run the memory evaluation now
+              </Button>
+              <Button size="sm" kind="quiet" busy={busy === "reembed"} onClick={() => void act("reembed", () => api.post("/api/memory/reembed", {}))}>
+                Re-embed all memory
+              </Button>
+            </div>
           </>
         ) : null}
       </section>

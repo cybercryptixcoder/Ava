@@ -551,4 +551,16 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX cores_version ON cores(version DESC);
   `,
+  /* 7: memory evaluation runs (nightly + manual), for the developer panel */ `
+  CREATE TABLE memory_eval_runs (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    via TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    total INTEGER NOT NULL,
+    detail_enc TEXT NOT NULL,
+    duration_ms INTEGER
+  );
+  CREATE INDEX memory_eval_runs_at ON memory_eval_runs(at DESC);
+  `,
 ];
