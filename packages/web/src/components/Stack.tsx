@@ -21,6 +21,7 @@ interface Drag {
 export function Stack({
   cards,
   busy,
+  nudge,
   focusToken,
   focusedId,
   onRespond,
@@ -29,6 +30,8 @@ export function Stack({
 }: {
   cards: CardView[];
   busy: boolean;
+  /** Play the one-time swipe nudge (first visit on a touch device). */
+  nudge?: boolean;
   /** Bumped by the page when focus should return to the top card. */
   focusToken: number;
   /** A card to mark as freshly arrived (the push deep link). */
@@ -126,7 +129,7 @@ export function Stack({
     onRespond(card, response, option, viaKeyboard);
   };
 
-  if (!top) return <div className="stack stack-empty" />;
+  if (!top) return null;
   const width = front.current?.offsetWidth ?? 360;
   const t = threshold();
   const moveDx = dragging ? drag.dx : 0;
@@ -138,7 +141,7 @@ export function Stack({
   const firstLabel = top.options[0]?.label ?? "Yes";
 
   return (
-    <div className="stack" data-dragging={dragging || undefined} data-busy={busy || undefined}>
+    <div className="stack" data-dragging={dragging || undefined} data-busy={busy || undefined} data-nudge={nudge || undefined}>
       {cards
         .slice(1, 3)
         .map((c, i) => (

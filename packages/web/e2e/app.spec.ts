@@ -116,4 +116,36 @@ test("no screen overflows sideways at 320 px", async ({ page }) => {
   await page.locator(".sheet").first().waitFor({ state: "visible" });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow, "an opened card layer overflows at 320 px").toBeLessThanOrEqual(0);
+  // The menu too, open.
+  await page.goto("/");
+  await page.getByRole("button", { name: "Menu" }).click();
+  await page.locator(".sheet").first().waitFor({ state: "visible" });
+  const menuOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(menuOverflow, "the open menu overflows at 320 px").toBeLessThanOrEqual(0);
+});
+
+test("a phone shows the swipe hint once, until the first swipes", async ({ page }) => {
+  await page.goto("/");
+  const hint = page.locator(".swipe-hint");
+  if (!phone()) {
+    await expect(hint).toHaveCount(0);
+    return;
+  }
+  await expect(hint).toBeVisible();
+  // One response in (recorded by an earlier visit), the hint still shows...
+  await page.evaluate(() => window.localStorage.setItem("ava.swipes", "1"));
+  await page.reload();
+  await expect(page.locator(".swipe-hint")).toBeVisible();
+  // ...the next swipe takes it away for good.
+  const front = page.locator(".stack-front").first();
+  await front.waitFor();
+  const box = (await front.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 28);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 170, box.y + 28, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".swipe-hint")).toHaveCount(0);
+  expect(await page.evaluate(() => window.localStorage.getItem("ava.swipes"))).toBe("2");
+  await page.reload();
+  await expect(page.locator(".swipe-hint")).toHaveCount(0);
 });
