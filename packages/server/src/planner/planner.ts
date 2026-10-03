@@ -4,6 +4,7 @@ import { inQuietHours } from "@ava/shared";
 import type { Services } from "../core/services";
 import { js, newId } from "../db/db";
 import { BudgetExceededError, ModelUnavailableError } from "../models/types";
+import { renderPack } from "../memory/retriever";
 import { DSL_GUIDE, lifeModelText, recentActivityText } from "./context";
 
 const RuleProposal = z.object({
@@ -60,6 +61,8 @@ export class Planner {
   private async call<T>(purpose: string, schema: z.ZodType<T>, instruction: string, wakeId: string, days = 7): Promise<{ out: T; callId: string } | { error: string }> {
     const { models, cfg, personality } = this.svc;
     try {
+      // The planner runs its own retrieval query instead of receiving a raw dump of recent words.
+      const memoryLines = renderPack(await this.svc.retriever.direct(instruction, {}, this.svc.settings.get().memory.planner_budget_tokens));
       const res = await models.complete({
         purpose,
         origin: "system",
@@ -75,7 +78,7 @@ export class Planner {
         messages: [
           {
             role: "user",
-            content: `${lifeModelText(this.svc, { calendarDays: purpose === "planner.weekly" ? 7 : 2 })}\n\n${recentActivityText(this.svc, days)}\n\n${this.budgetText()}\n\n${instruction}`,
+            content: `${lifeModelText(this.svc, { calendarDays: purpose === "planner.weekly" ? 7 : 2 })}\n\n${recentActivityText(this.svc, days)}${memoryLines ? `\n\n${memoryLines}` : ""}\n\n${this.budgetText()}\n\n${instruction}`,
           },
         ],
       });

@@ -287,7 +287,7 @@ export class LiveSession {
         ...conversation.history(this.convId, 12).slice(0, speculative ? undefined : -1),
         {
           role: "user",
-          content: `${conversation.contextBlock(this.convId, text, true, [
+          content: `${await conversation.contextBlock(this.convId, text, true, [
             "Live mode: a real-time spoken conversation, like a call. Keep it conversational and brief unless he's riffing. Start with the point. No fillers ('um', 'let me think', 'great question'). What he tells you is filed into his stack; don't describe it back.",
           ])}\n\n${text}`,
         },
@@ -299,7 +299,7 @@ export class LiveSession {
           model: this.model,
           maxTokens: 900,
           lowLatency: true,
-          system: conversation.systemBlocks(true),
+          system: await conversation.systemBlocks(true),
           messages,
           signal: run.abort.signal,
           cacheMessages: true,

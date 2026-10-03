@@ -16,6 +16,7 @@ import { MemoryProcessor } from "./memory/processor";
 import { MemorySearch } from "./memory/search";
 import { Retriever } from "./memory/retriever";
 import { Embeddings } from "./memory/embeddings";
+import { Core } from "./memory/core";
 import { BeliefStore } from "./state/beliefs";
 import { ProposalStore } from "./state/proposals";
 import { QuestionStore } from "./state/questions";
@@ -121,6 +122,7 @@ export function buildApp(opts: BuildOptions = {}): App {
   svc.memorySearch = new MemorySearch(svc);
   svc.retriever = new Retriever(svc);
   svc.embeddings = new Embeddings(svc);
+  svc.core = new Core(svc);
   // The derived layers watch the log: every append schedules processing.
   svc.memory.onAppend(() => svc.memoryProcessor.notify());
   svc.memory.onAppend((e) => svc.memorySearch.indexEntry(e));

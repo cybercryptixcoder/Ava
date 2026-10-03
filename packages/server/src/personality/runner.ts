@@ -69,7 +69,7 @@ export class PersonalityRunner {
         maxTokens: lg.maxTokens,
         lowLatency: c.mode === "live",
         effort: lg.kind === "quick" ? "low" : "medium",
-        system: conversation.systemBlocks(spoken),
+        system: await conversation.systemBlocks(spoken),
         messages: [
           ...history,
           {

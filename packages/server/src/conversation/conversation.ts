@@ -4,7 +4,7 @@ import { ChangeSchema, parseScript, type Change, type HydratedModule, type TurnV
 import type { Services } from "../core/services";
 import { newId } from "../db/db";
 import type { Entry } from "../state/memory";
-import { lifeModelText } from "../planner/context";
+import { renderPack, estTokens, type ContextPack } from "../memory/retriever";
 import { STACK_PROTOCOL } from "./protocol";
 import { DirectiveParser, type Directive } from "./directives";
 import { enforceAffirmationBudget, splitSentences } from "./affirmation";
@@ -140,27 +140,38 @@ export class Conversation {
 
   // ---------------------------------------------------------------- prompts
 
-  /** The stable part of the conversational system prompt (cached). */
-  systemBlocks(spoken: boolean): { text: string; cache?: boolean }[] {
+  /**
+   * The stable part of the conversational system prompt. Order matters for
+   * caching: instructions first, the core as the cache breakpoint, so the
+   * whole stable prefix earns the prompt-cache discount on every call.
+   */
+  async systemBlocks(spoken: boolean): Promise<{ text: string; cache?: boolean }[]> {
     const { personality, cfg } = this.svc;
-    const blocks = [
+    const core = await this.svc.core.ensure();
+    const blocks: { text: string; cache?: boolean }[] = [
       { text: `${personality.voice()}\n\nThe person you talk with is ${cfg.ownerName}.`, cache: false },
       { text: `## Example exchanges\n${personality.examples()}`, cache: false },
-      { text: STACK_PROTOCOL, cache: !spoken },
+      { text: STACK_PROTOCOL, cache: !spoken && !core },
     ];
-    if (spoken) blocks.push({ text: `## Speaking\n${personality.spoken()}`, cache: true });
+    if (spoken) blocks.push({ text: `## Speaking\n${personality.spoken()}`, cache: !core });
+    if (core) blocks.push({ text: `## The core\nWhat you durably know about him. It refreshes on its own; never restate it wholesale.\n${core}`, cache: true });
     return blocks;
   }
 
-  /** Volatile per-turn context: the life model, his stack, style notes, length guidance. */
-  contextBlock(convId: string, userText: string, spoken: boolean, extra: string[] = []): string {
+  /** Volatile per-turn context: the context pack, style notes, length guidance. */
+  async contextBlock(convId: string, userText: string, spoken: boolean, extra: string[] = [], pack: ContextPack | null = null): Promise<string> {
     const notes = this.styleNotes().filter((n) => n.active);
     const lg = lengthGuidance(userText, spoken);
-    const stack = this.svc.cards.stack();
+    const tz = this.svc.settings.tz();
+    const now = DateTime.fromJSDate(this.svc.clock.now()).setZone(tz).toFormat("ccc yyyy-LL-dd HH:mm");
+    const hasMemory = !!pack && !pack.skipped && !pack.empty;
     return [
       `<context>`,
-      lifeModelText(this.svc, { calendarDays: 2 }),
-      `His stack right now (top first):\n${stack.cards.map((c) => `- ${c.title}`).join("\n") || "- empty: all clear"}`,
+      `Now: ${now} (${tz}).`,
+      renderPack(pack),
+      hasMemory
+        ? `Grounding: state past facts only as they appear in <memory> above; where it doesn't cover something, say so plainly instead of guessing.`
+        : `Grounding: <memory> is empty for this message — if he asks about the past, say plainly you don't remember rather than guessing.`,
       notes.length ? `His style notes (follow these):\n${notes.map((n) => `- ${n.text}`).join("\n")}` : "",
       `This reply will be ${spoken ? "spoken aloud, with a short text version on screen" : "read on screen"}. ${lg.note}`,
       ...extra,
@@ -184,6 +195,22 @@ export class Conversation {
       else out.push({ role, content: text });
     }
     while (out.length && out[0].role !== "user") out.shift();
+    return out;
+  }
+
+  /** The recent window: the last turns, verbatim, capped by count then tokens. */
+  window(convId: string, dropNewest = 1): Anthropic.MessageParam[] {
+    const s = this.svc.settings.get().memory;
+    const msgs = this.history(convId, s.recent_turns + dropNewest);
+    for (let i = 0; i < dropNewest && msgs.length; i++) msgs.pop();
+    let tokens = 0;
+    const out: Anthropic.MessageParam[] = [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const t = estTokens(String(msgs[i].content));
+      if (out.length && tokens + t > s.recent_budget_tokens) break;
+      tokens += t;
+      out.unshift(msgs[i]);
+    }
     return out;
   }
 
@@ -310,6 +337,18 @@ export class Conversation {
     const spoken = input.speak ?? settings.get().voice.autoplay;
     sink({ type: "status", state: "thinking" });
     const lg = lengthGuidance(text, spoken);
+    // The read path: retrieval for this message. The pack is volatile context;
+    // the recent window stays verbatim; both sit under the stable, cached prefix.
+    const packStart = Date.now();
+    let pack: ContextPack | null = null;
+    try {
+      pack = await svc.retriever.retrieve(text, { budgetTokens: settings.get().memory.context_budget_tokens });
+    } catch (e) {
+      log.warn("memory.retrieve", `Retrieval failed; answering without a pack: ${(e as Error).message}`);
+    }
+    const retrievalMs = Date.now() - packStart;
+    const window = this.window(convId);
+    const system = await this.systemBlocks(spoken);
     const turnRef = { id: null as string | null };
     let raw = "";
     const run = async (extraNote?: string) => {
@@ -319,8 +358,8 @@ export class Conversation {
         (d) => this.handleDirective(convId, d, sink, turnRef),
       );
       const messages: Anthropic.MessageParam[] = [
-        ...this.history(convId, 12).slice(0, -1),
-        { role: "user", content: `${this.contextBlock(convId, text, spoken, [chipsLine, extraNote ?? ""].filter(Boolean))}\n\n${text}` },
+        ...window,
+        { role: "user", content: `${await this.contextBlock(convId, text, spoken, [chipsLine, extraNote ?? ""].filter(Boolean), pack)}\n\n${text}` },
       ];
       for (let round = 0; round < 3; round++) {
         const res = await models.stream(
@@ -330,7 +369,7 @@ export class Conversation {
             model: cfg.models.conversation,
             maxTokens: lg.maxTokens,
             effort: lg.kind === "quick" ? "low" : "medium",
-            system: this.systemBlocks(spoken),
+            system,
             messages,
             tools: TOOLS,
             signal,
@@ -367,6 +406,16 @@ export class Conversation {
     if (finalWords !== words) sink({ type: "replace_text", text: display });
     const avaTurn = this.saveTurn({ convId, role: "ava", mode: "async", text: display, raw: finalWords === words ? raw : dropTrimmedSentences(raw, words, finalWords), affirmation: check.affirmation, trimmed: check.trimmed });
     turnRef.id = avaTurn.id;
+    // Grounding: which refs the reply drew on, and what the call carried per segment.
+    const usedIds = pack?.entries_used ?? [];
+    if (usedIds.length) svc.memory.mergeMeta(avaTurn.id, { memory_used: usedIds.slice(0, 30) });
+    const winTokens = window.reduce((n, m) => n + estTokens(String(m.content)), 0);
+    const prefixTokens = system.reduce((n, b) => n + estTokens(b.text), 0);
+    log.info(
+      "memory.grounding",
+      `Context for this reply: ~${prefixTokens} prefix, ${pack?.tokens ?? 0} pack, ${winTokens} window, ${estTokens(text)} message tokens; retrieval ${retrievalMs} ms${usedIds.length ? `; drew on ${usedIds.length} ${usedIds.length === 1 ? "entry" : "entries"}` : "; no memory refs"}`,
+      { turn_id: avaTurn.id, refs: usedIds.slice(0, 30), prefix_tokens: prefixTokens, pack_tokens: pack?.tokens ?? 0, window_tokens: winTokens, message_tokens: estTokens(text), retrieval_ms: retrievalMs, via: pack?.via ?? null },
+    );
     sink({ type: "done", turn: avaTurn });
     sink({ type: "status", state: "idle" });
 
@@ -386,6 +435,5 @@ export class Conversation {
         sink({ type: "status", state: "idle" });
       }
     }
-    void DateTime;
   }
 }
