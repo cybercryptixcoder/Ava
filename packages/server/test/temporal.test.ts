@@ -80,6 +80,7 @@ describe("nightly consolidation", () => {
       "memory.reflections": () => ({ reflections: [{ statement: "He gets his real work done in the morning.", area: "study", entry_ids: [e1, e2, e3], confidence: 0.55 }] }),
     });
     t = makeApp({ at: atLocal("2026-10-05", "20:00", NY).toISOString(), provider });
+    t.svc.settings.update({ memory: { eval_nightly: false } }, t.svc.clock.now()); // the evaluation is its own suite; this test pins consolidation itself
     e1 = t.svc.memory.append({ kind: "turn", source: "conversation", role: "user", text: "morning sessions go best" });
     e2 = t.svc.memory.append({ kind: "turn", source: "conversation", role: "user", text: "before noon I actually get things done" });
     e3 = t.svc.memory.append({ kind: "turn", source: "conversation", role: "user", text: "early is when the work happens" });

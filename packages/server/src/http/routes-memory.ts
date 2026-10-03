@@ -209,4 +209,45 @@ export function registerMemoryRoutes(app: FastifyInstance, svc: Services): void 
     const r = await svc.forgetFlow.apply(ids, String(req.body?.reason ?? "forgotten from the memory screen"));
     return { ok: true, summary: r.summary, closure: r.closure };
   });
+
+  // ------------------------------------------------------------ the dev panel
+
+  app.get("/api/memory/stats", async () => {
+    const { db } = svc;
+    const ground = db
+      .all<{ data: string }>("SELECT data FROM log WHERE kind = 'memory.grounding' ORDER BY rowid DESC LIMIT 300")
+      .map((r) => {
+        try {
+          return JSON.parse(r.data) as { pack_tokens?: number; window_tokens?: number; message_tokens?: number; prefix_tokens?: number; retrieval_ms?: number | null };
+        } catch {
+          return null;
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x);
+    const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+    const contextSizes = ground.map((g) => (g.prefix_tokens ?? 0) + (g.pack_tokens ?? 0) + (g.window_tokens ?? 0) + (g.message_tokens ?? 0));
+    const retrievals = ground.map((g) => g.retrieval_ms).filter((x): x is number => typeof x === "number");
+    const calls = db.all<{ usage: string | null }>("SELECT usage FROM model_calls WHERE purpose IN ('conversation.reply', 'live.reply', 'memory.eval_reply') AND usage IS NOT NULL ORDER BY at DESC LIMIT 300");
+    let hit = 0;
+    let totalIn = 0;
+    for (const c of calls) {
+      try {
+        const u = JSON.parse(c.usage ?? "{}") as { input_tokens?: number; cache_read_input_tokens?: number };
+        const cached = u.cache_read_input_tokens ?? 0;
+        hit += cached;
+        totalIn += (u.input_tokens ?? 0) + cached;
+      } catch {
+        /* unparsable usage rows are skipped */
+      }
+    }
+    return {
+      avg_context_tokens: avg(contextSizes),
+      avg_retrieval_ms: avg(retrievals),
+      cache_hit_rate: totalIn ? hit / totalIn : null,
+      calls_considered: calls.length,
+      evals: db.all<{ id: string; at: string; via: string; passed: number; total: number; duration_ms: number | null }>("SELECT id, at, via, passed, total, duration_ms FROM memory_eval_runs ORDER BY at DESC LIMIT 20"),
+    };
+  });
+
+  app.post("/api/memory/eval/run", async () => ({ run: await svc.memoryEval.run({ via: "manual" }) }));
 }

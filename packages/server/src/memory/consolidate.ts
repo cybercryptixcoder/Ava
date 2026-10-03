@@ -23,6 +23,7 @@ export interface ConsolidationReport {
   reflections: number;
   calls: number;
   stopped: string | null;
+  eval: "skipped" | { passed: number; total: number };
 }
 
 /**
@@ -50,7 +51,7 @@ export class Consolidation {
     this.running = true;
     const { log, settings } = this.svc;
     const cfg = settings.get().memory.consolidation;
-    const report: ConsolidationReport = { gists: { revised: 0, removed: 0 }, core: "skipped", duplicates: 0, importance_updated: 0, reflections: 0, calls: 0, stopped: null };
+    const report: ConsolidationReport = { gists: { revised: 0, removed: 0 }, core: "skipped", duplicates: 0, importance_updated: 0, reflections: 0, calls: 0, stopped: null, eval: "skipped" };
     this.budgetLeft = cfg.max_calls;
     const spent0 = this.budgetLeft;
     try {
@@ -63,14 +64,30 @@ export class Consolidation {
       report.duplicates = this.linkDuplicates();
       report.importance_updated = this.recomputeImportance();
       report.reflections = await this.proposeReflections(report);
+      await this.runEval(report);
       report.calls = spent0 - this.budgetLeft;
       if (report.calls >= cfg.max_calls) report.stopped = report.stopped ?? "call budget reached";
-      const summary = `gists ${report.gists.revised} revised / ${report.gists.removed} removed, core ${report.core}, ${report.duplicates} duplicates linked, ${report.importance_updated} importance updates, ${report.reflections} reflections, ${report.calls} model calls${report.stopped ? ` (${report.stopped})` : ""}`;
+      const summary = `gists ${report.gists.revised} revised / ${report.gists.removed} removed, core ${report.core}, ${report.duplicates} duplicates linked, ${report.importance_updated} importance updates, ${report.reflections} reflections, eval ${typeof report.eval === "object" ? `${report.eval.passed}/${report.eval.total}` : "skipped"}, ${report.calls} model calls${report.stopped ? ` (${report.stopped})` : ""}`;
       this.svc.memory.setState("consolidation.last", { at: this.svc.clock.now().toISOString(), summary, report });
       log.info("memory.consolidate", `Consolidation finished: ${summary}`, report as unknown as Record<string, unknown>, wakeId);
       return summary;
     } finally {
       this.running = false;
+    }
+  }
+
+  /** The graded evaluation, run after everything else settled; separate small budget, results in the dev panel. */
+  private async runEval(report: ConsolidationReport): Promise<void> {
+    if (!this.svc.settings.get().memory.eval_nightly || !this.svc.models.available) {
+      report.eval = "skipped";
+      return;
+    }
+    try {
+      const r = await this.svc.memoryEval.run({ via: "consolidation" });
+      report.eval = { passed: r.passed, total: r.total };
+    } catch (e) {
+      report.eval = "skipped";
+      this.svc.log.warn("memory.eval", `Nightly evaluation skipped: ${(e as Error).message}`);
     }
   }
 

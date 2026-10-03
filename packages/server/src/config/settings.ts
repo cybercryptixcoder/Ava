@@ -136,6 +136,8 @@ export const SettingsSchema = z.object({
       /** Model-call budget for one consolidation run. */
       max_calls: z.number().int().min(5).max(100),
     }),
+    /** Run the graded memory evaluation at the end of each consolidation. */
+    eval_nightly: z.boolean(),
     /** Skip retrieval entirely for messages that clearly need no memory. */
     fast_path: z.boolean(),
     /** The retriever runs as a cheap-model sub-agent; "direct" skips the agent. */
@@ -230,6 +232,7 @@ export function defaultSettings(envDefaults: {
       planner_budget_tokens: 2500,
       live_grace_ms: 250,
       consolidation: { enabled: true, at_local: "03:00", max_calls: 30 },
+      eval_nightly: true,
       fast_path: true,
       retriever: { mode: "agent", max_rounds: 4 },
     },

@@ -8,6 +8,7 @@
     "build": "node build.mjs",
     "config:check": "tsx src/cli/config-check.ts",
     "reembed": "tsx src/cli/reembed.ts",
+    "memory-eval": "tsx src/cli/memory-eval.ts",
     "vapid": "tsx src/cli/vapid.ts",
     "hash-password": "tsx src/cli/hash-password.ts",
     "seed:test": "tsx src/cli/seed-test.ts",
