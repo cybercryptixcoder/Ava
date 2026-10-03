@@ -73,6 +73,61 @@ describe("chat export import", () => {
   it("tolerates junk without throwing", () => {
     expect(() => parseChatExport(Buffer.from("not json"), "conversations.json")).not.toThrow();
   });
+
+  it("keeps user text when content lives in mixed parts, content.text or empty arrays", () => {
+    const nodes = {
+      a: { message: null, parent: null, children: ["b"] },
+      // Mixed parts: the string is his, the image pointer is skipped, nothing crashes.
+      b: {
+        message: {
+          author: { role: "user" },
+          content: { content_type: "multimodal_text", parts: ["Design review tomorrow at 3?", { content_type: "image_asset_pointer", asset_pointer: "file-service://file-abc123" }] },
+          create_time: 1727000001,
+        },
+        parent: "a",
+        children: ["c"],
+      },
+      // Text in content.text on a code message.
+      c: {
+        message: { author: { role: "assistant" }, content: { content_type: "code", text: "def shift(t, n): return t[n:] + t[:n]" }, create_time: 1727000002 },
+        parent: "b",
+        children: ["d"],
+      },
+      // An execution output carries its text in content.text too.
+      d: {
+        message: { author: { role: "assistant" }, content: { content_type: "execution_output", text: "3 tests passed" }, create_time: 1727000003 },
+        parent: "c",
+        children: ["e"],
+      },
+      // Empty parts, and parts of empty strings, contribute nothing and crash nothing.
+      e: {
+        message: { author: { role: "user" }, content: { content_type: "text", parts: [] }, create_time: 1727000004 },
+        parent: "d",
+        children: ["f"],
+      },
+      f: {
+        message: { author: { role: "user" }, content: { content_type: "text", parts: ["", "  ", "Also, book the room"] }, create_time: 1727000005 },
+        parent: "e",
+        children: [],
+      },
+    };
+    const data = [{ title: "Mixed", create_time: 1727000000, current_node: "f", mapping: nodes }];
+    const r = parseChatExport(Buffer.from(JSON.stringify(data)), "conversations.json");
+    expect(r.conversations).toHaveLength(1);
+    const msgs = r.conversations[0].messages;
+    expect(msgs.map((m) => m.text)).toEqual([
+      "Design review tomorrow at 3?",
+      "def shift(t, n): return t[n:] + t[:n]",
+      "3 tests passed",
+      "Also, book the room",
+    ]);
+    expect(msgs.map((m) => m.role)).toEqual(["user", "assistant", "assistant", "user"]);
+    // His side for extraction still finds the two things he said, and nothing of the model's.
+    const mine = userTextOf(r.conversations[0]);
+    expect(mine).toContain("Design review tomorrow at 3?");
+    expect(mine).toContain("Also, book the room");
+    expect(mine).not.toContain("tests passed");
+  });
 });
 
 describe("saved items import", () => {
