@@ -176,7 +176,8 @@ export class WisprSource implements SourcePlugin {
     let made = 0;
     for (const n of notes) {
       if (n.text.trim().length < 30) continue;
-      const evId = evidence.add({ kind: "note", source: this.id, source_ref: `${n.id}:${n.modified ?? ""}`, occurred_at: n.modified ?? clock.now().toISOString(), summary: n.title, content: n.text });
+      const entryId = this.svc.memory.append({ kind: "transcript", source: this.id, text: n.text, occurred_at: n.modified ?? clock.now().toISOString(), meta: { title: n.title } });
+      const evId = evidence.add({ kind: "note", source: this.id, source_ref: `${n.id}:${n.modified ?? ""}`, occurred_at: n.modified ?? clock.now().toISOString(), summary: n.title, content: { entry_id: entryId } });
       if (!models.available) continue;
       try {
         const changes = await extract(this.svc, n.text.slice(0, 12_000), { purpose: "wispr.extract", origin: "system", extraInstruction: "This is a note Shreyas dictated in Wispr Flow." });
@@ -199,6 +200,7 @@ export class WisprSource implements SourcePlugin {
     this.svc.db.run("DELETE FROM proposals WHERE origin = ? AND status = 'pending'", [this.id]);
     writeSecrets(this.svc, "wispr", null);
     writeSourceState(this.svc, this.id, {});
+    this.svc.memory.forgetBySource(this.id, "you deleted the Wispr source data");
     return this.svc.evidence.deleteBySource(this.id);
   }
 }

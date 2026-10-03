@@ -91,7 +91,8 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
   // ------------------------------------------------------------ beliefs
   for (const b of BELIEFS) {
     clock.set(at(-b.daysAgo, "21:00"));
-    const evId = evidence.add({ kind: "transcript", source: "voice", content: `(fixture) ${b.statement}`, summary: b.statement });
+    const entryId = svc.memory.append({ kind: "transcript", source: "voice", text: `(fixture) ${b.statement}`, meta: { title: b.statement, backfilled: true } });
+    const evId = evidence.add({ kind: "transcript", source: "voice", content: { entry_id: entryId }, summary: b.statement });
     beliefs.add({ area: b.area, statement: b.statement, provenance: b.provenance, confidence: b.confidence, evidence_ids: [evId] });
   }
 
@@ -300,7 +301,7 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
   clock.set(at(0, "11:40"));
   const conv = svc.canvas.current(true);
   const userTurn = svc.conversation.saveTurn({ convId: conv, role: "user", mode: "async", text: BRAIN_DUMP, input_kind: "dictated" });
-  const ev = evidence.add({ kind: "transcript", source: "voice", content: BRAIN_DUMP, summary: BRAIN_DUMP.slice(0, 200), source_ref: userTurn.id });
+  const ev = evidence.add({ kind: "transcript", source: "voice", content: { entry_id: userTurn.id }, summary: BRAIN_DUMP.slice(0, 200), source_ref: userTurn.id });
   svc.filing.file(
     [
       { change: { op: "update_item", item_id: ids.get("os2")!, patch: { data: { notes: "Parser working" } } }, summary: "OS Project 2: the parser works", reason: "I got the parser working", stated: true },

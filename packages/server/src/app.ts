@@ -10,6 +10,8 @@ import type { Services } from "./core/services";
 import { Cipher } from "./security/crypto";
 import { ItemStore } from "./state/items";
 import { EvidenceStore } from "./state/evidence";
+import { MemoryStore } from "./state/memory";
+import { Backfill } from "./memory/backfill";
 import { BeliefStore } from "./state/beliefs";
 import { ProposalStore } from "./state/proposals";
 import { QuestionStore } from "./state/questions";
@@ -80,7 +82,8 @@ export function buildApp(opts: BuildOptions = {}): App {
   const counters = new Counters(db, clock, () => settings.tz());
 
   const svc = { cfg, db, clock, cipher, bus, log, settings, counters } as Services;
-  svc.items = new ItemStore(db, clock);
+  svc.memory = new MemoryStore(db, clock, cipher);
+  svc.items = new ItemStore(db, clock, svc.memory);
   svc.evidence = new EvidenceStore(db, clock, cipher);
   svc.beliefs = new BeliefStore(db, clock, () => settings.get().beliefs.half_life_days);
   svc.threads = new ThreadStore(db, clock, svc.items, settings, log);
@@ -109,6 +112,7 @@ export function buildApp(opts: BuildOptions = {}): App {
   svc.actions = new ExternalActions(svc);
   svc.options = new OptionRunner(svc);
   svc.wake = new WakeProcedure(svc);
+  svc.backfill = new Backfill(svc);
 
   // Default voices from env if not chosen yet.
   const v = settings.get().voice;
@@ -172,6 +176,8 @@ export function buildApp(opts: BuildOptions = {}): App {
       svc.scheduler.ensureSystemWakes();
       for (const it of svc.items.list({ open: true, types: ["task", "commitment"] })) if (it.due_at) svc.scheduler.syncDeadlineWakes(it);
       svc.threads.backfill();
+      // Bring any data from before the raw log existed into it; small batches, resumable.
+      svc.backfill.kick();
       svc.scheduler.start();
       deadman.start();
       runRetention(svc);

@@ -74,7 +74,9 @@ export class QuestionStore {
     const q = db.get<Record<string, unknown>>("SELECT * FROM questions WHERE id = ?", [id]);
     if (!q) throw new Error(`No question ${id}`);
     db.run("UPDATE questions SET status = 'answered', answer = ?, answered_at = ? WHERE id = ?", [answer, clock.now().toISOString(), id]);
-    const evId = evidence.add({ kind: "answer", source: "question", content: { question: q.text, answer }, summary: `Q: ${q.text} A: ${answer}` });
+    const entryId = this.svc.memory.append({ kind: "answer", source: "question", text: answer, meta: { question_id: id, question: q.text } });
+    this.svc.memory.link(entryId, "about", "question", id);
+    const evId = evidence.add({ kind: "answer", source: "question", content: { entry_id: entryId, question: q.text }, summary: `Q: ${q.text} A: ${answer}` });
     const about = j<{ belief_id?: string; item_id?: string } | null>(q.about, null);
     let nBeliefs = 0,
       nChips = 0;

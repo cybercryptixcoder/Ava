@@ -580,6 +580,7 @@ export class CardStore {
         ]);
         if (messageId) await responder.respond(messageId, "not_now");
         this.rebalance();
+        this.logResponse(c, "not_now", `Back ${at.why}`, null);
         log.info("card.snoozed", `Not now: "${c.title}". Back ${at.why}`, { card_id: c.id, until: at.when.toISOString() });
         bus.emit({ type: "state.changed", what: ["cards"] });
         return { ...result, card: this.view(this.get(c.id)!), summary: `Back ${at.why}`, returns_at: at.when.toISOString() };
@@ -601,9 +602,22 @@ export class CardStore {
     }
     this.svc.db.run("UPDATE cards SET status = ?, response = ?, responded_at = ?, updated_at = ? WHERE id = ?", [status, response, this.now().toISOString(), this.now().toISOString(), c.id]);
     this.rebalance();
+    this.logResponse(c, response, result.summary, optionKey);
     log.info("card.response", `${response === "yes" ? "Yes" : response === "already_done" ? "Already done" : "Stop suggesting this"}: "${c.title}"${result.summary ? ` (${result.summary})` : ""}`, { card_id: c.id, response, option: optionKey ?? null });
     bus.emit({ type: "state.changed", what: ["cards", "items"] });
     return { ...result, card: this.view(this.get(c.id)!) };
+  }
+
+  /** Every response is recorded in the raw log, with what it touched. */
+  private logResponse(c: Card, response: CardResponse, summary: string, optionKey?: string | null): void {
+    const entryId = this.svc.memory.append({
+      kind: "card_response",
+      source: "system",
+      text: `"${c.title}" — ${response === "yes" ? "yes" : response === "not_now" ? "not now" : response === "already_done" ? "already done" : "stop suggesting this"}${summary ? ` (${summary})` : ""}`,
+      meta: { card_id: c.id, response, option: optionKey ?? null, card_kind: c.kind, source: c.source },
+    });
+    this.svc.memory.link(entryId, "about", "card", c.id);
+    for (const itemId of c.item_ids) this.svc.memory.link(entryId, "touched", "item", itemId);
   }
 
   private async act(c: Card, a: Act): Promise<{ summary: string; open: CardResult["open"]; exec_task_id: string | null; keepOpen?: boolean }> {

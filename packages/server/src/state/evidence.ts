@@ -116,10 +116,16 @@ export class EvidenceStore {
     this.db.run("INSERT OR IGNORE INTO item_evidence (item_id, evidence_id) VALUES (?, ?)", [itemId, evidenceId]);
   }
 
-  /** Drop raw content once its purge time has passed and it has been distilled. Keeps the summary. */
+  /**
+   * Drop raw content once its purge time has passed and it has been distilled.
+   * Text records of his words and Ava's replies — voice transcripts, chat
+   * imports, sent mail, Wispr notes, question answers — never purge: they are
+   * the memory. Only activity samples and other raw third-party content move
+   * through here. Keeps the summary.
+   */
   purgeDue(now: Date): number {
     const r = this.db.run(
-      "UPDATE evidence SET content_enc = ?, purge_after = NULL WHERE purge_after IS NOT NULL AND purge_after <= ? AND distilled_at IS NOT NULL",
+      "UPDATE evidence SET content_enc = ?, purge_after = NULL WHERE purge_after IS NOT NULL AND purge_after <= ? AND distilled_at IS NOT NULL AND kind NOT IN ('transcript','conversation_import','email','note','answer')",
       [this.cipher.encJson({ purged: true }), now.toISOString()],
     );
     return r.changes;

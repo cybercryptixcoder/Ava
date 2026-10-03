@@ -86,7 +86,7 @@ export function recentActivityText(svc: Services, days: number): string {
   if (rv.proposed.length) lines.push(`Rule proposals awaiting approval:\n${rv.proposed.map((r) => `- ${r.id} "${r.name}": ${r.readable}`).join("\n")}`);
   const reports = svc.executors.recentReports(since);
   if (reports.length) lines.push(`Executor reports (plan-fit feedback):\n${reports.map((r) => `- ${r.title} [${r.status}]${r.plan_fit ? ` fits=${r.plan_fit.fits}: ${r.plan_fit.note}` : ""}`).join("\n")}`);
-  const turns = db.all<{ created_at: string; text_enc: string }>("SELECT created_at, text_enc FROM turns WHERE role = 'user' AND created_at >= ? ORDER BY created_at DESC LIMIT 12", [since]);
+  const turns = db.all<{ created_at: string; text_enc: string }>("SELECT recorded_at AS created_at, text_enc FROM entries WHERE kind = 'turn' AND role = 'user' AND recorded_at >= ? ORDER BY recorded_at DESC LIMIT 12", [since]);
   if (turns.length) {
     lines.push(
       `What he said recently (newest first, trimmed):\n${turns.map((t) => `- ${DateTime.fromISO(t.created_at).setZone(tz).toFormat("ccc HH:mm")}: ${(svc.cipher.decOpt(t.text_enc) ?? "").slice(0, 400)}`).join("\n")}`,

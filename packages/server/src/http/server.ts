@@ -10,6 +10,7 @@ import type { Services } from "../core/services";
 import { registerAuth } from "./auth";
 import { registerCoreRoutes } from "./routes-core";
 import { registerDevRoutes } from "./routes-dev";
+import { registerMemoryRoutes } from "./routes-memory";
 import { registerSourceRoutes } from "./routes-sources";
 import { registerTalkRoutes } from "./routes-talk";
 import { registerStackRoutes } from "./routes-stack";
@@ -35,6 +36,7 @@ export async function buildServer(svc: Services, opts: { logger?: boolean; serve
   registerStackRoutes(app, svc);
   registerSourceRoutes(app, svc);
   registerDevRoutes(app, svc);
+  registerMemoryRoutes(app, svc);
 
   const webDir = svc.cfg.webDistDir;
   if (opts.serveWeb !== false && fs.existsSync(path.join(webDir, "index.html"))) {

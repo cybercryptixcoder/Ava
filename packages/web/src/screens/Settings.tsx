@@ -319,7 +319,7 @@ function Privacy({ s }: { s: S }) {
   const { save } = useSave();
   return (
     <div className="form-grid">
-      <p className="band-note">Sensitive data is encrypted at rest. Raw high-volume data is deleted once it has been distilled; the summaries and beliefs stay.</p>
+      <p className="band-note">Sensitive data is encrypted at rest. Raw high-volume data (window titles, audio, model call bodies) is deleted once distilled. Everything you say to Ava and she says to you — transcripts, imports, sent mail, artifacts — is the raw log: kept verbatim, never purged; summaries and beliefs are derived from it and point back into it.</p>
       <div className="form-row">
         <NumberField label="Keep raw window titles (days)" value={s.retention.raw_activity_days} min={0.5} step={0.5} onSave={(v) => void save({ retention: { ...s.retention, raw_activity_days: v } })} />
         <NumberField label="Keep audio (days)" value={s.retention.raw_audio_days} min={0.5} step={0.5} onSave={(v) => void save({ retention: { ...s.retention, raw_audio_days: v } })} />
