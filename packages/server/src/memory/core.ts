@@ -18,10 +18,10 @@ export class Core {
   constructor(private svc: Services) {}
 
   /** The latest stored version, or null when none exists yet. */
-  latest(): { version: number; text: string } | null {
-    const r = this.svc.db.get<{ version: number; text_enc: string }>("SELECT version, text_enc FROM cores ORDER BY version DESC LIMIT 1");
+  latest(): { version: number; text: string; created_at: string } | null {
+    const r = this.svc.db.get<{ version: number; text_enc: string; created_at: string }>("SELECT version, text_enc, created_at FROM cores ORDER BY version DESC LIMIT 1");
     if (!r) return null;
-    return { version: r.version, text: this.svc.cipher.decOpt(r.text_enc) ?? "" };
+    return { version: r.version, text: this.svc.cipher.decOpt(r.text_enc) ?? "", created_at: String(r.created_at) };
   }
 
   /** What the conversation puts in its prompt: the latest core, built on first need when a model is available. */

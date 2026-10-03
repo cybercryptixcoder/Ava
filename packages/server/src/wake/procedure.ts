@@ -56,6 +56,9 @@ export class WakeProcedure {
       case "executor":
         outcome = await this.svc.executors.runSession(String(w.payload.exec_task_id), w.id);
         break;
+      case "consolidation":
+        outcome = await this.svc.consolidation.run(w.id);
+        break;
       default:
         outcome = await this.standard(w);
     }

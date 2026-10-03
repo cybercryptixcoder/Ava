@@ -15,6 +15,7 @@ export type WakeKind =
   | "brief"
   | "evening"
   | "weekly"
+  | "consolidation"
   | "deadline"
   | "lookahead"
   | "event"
@@ -24,7 +25,7 @@ export type WakeKind =
   | "planning_new";
 
 /** Kinds the system owns. Ava can never cancel these; anchors move only through settings. */
-export const SYSTEM_ANCHORED: WakeKind[] = ["heartbeat", "brief", "evening", "weekly"];
+export const SYSTEM_ANCHORED: WakeKind[] = ["heartbeat", "brief", "evening", "weekly", "consolidation"];
 /** Kinds Ava requests; these go through budget validation. */
 export const AVA_REQUESTED: WakeKind[] = ["planner", "rule", "executor"];
 
@@ -360,6 +361,10 @@ export class Scheduler {
       if (this.pending({ kinds: [kind] }).length) continue;
       const n = this.nextLocal(time, now, tz, weekday);
       this.system({ kind, at: n.at, reason, owner: "system", anchor: { type: "local", date: n.date, time }, dedupe_key: `${kind}:${n.date}` });
+    }
+    if (s.memory.consolidation.enabled && !this.pending({ kinds: ["consolidation"] }).length) {
+      const n = this.nextLocal(s.memory.consolidation.at_local, now, tz);
+      this.system({ kind: "consolidation", at: n.at, reason: "Nightly memory consolidation", owner: "system", anchor: { type: "local", date: n.date, time: s.memory.consolidation.at_local }, dedupe_key: `consolidation:${n.date}` });
     }
   }
 
