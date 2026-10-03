@@ -169,7 +169,7 @@ function EpisodeSheet({ id, onClose, onForget, onEntry }: { id: string; onClose:
               <li key={e.id} className="mem-row" data-deleted={e.deleted || undefined}>
                 <span className="mem-chip">{e.role ?? e.kind}</span>
                 <span className="num mem-time">{clock(e.at)}</span>
-                <button type="button" className="mem-link mem-row-text" onClick={() => onEntry(e.id)}>
+                <button type="button" className="mem-row-text" onClick={() => onEntry(e.id)}>
                   {e.preview}
                 </button>
               </li>
@@ -358,7 +358,7 @@ export function Memory() {
             <li key={`${h.ref_kind}:${h.ref_id}`} className="mem-row">
               <span className="mem-chip">{h.ref_kind}</span>
               <span className="num mem-time">{dayLabel(h.at)}</span>
-              <button type="button" className="mem-link mem-row-text" onClick={() => openHit(h)}>
+              <button type="button" className="mem-row-text" onClick={() => openHit(h)}>
                 {h.preview || h.ref_id}
               </button>
             </li>
@@ -378,7 +378,7 @@ export function Memory() {
                 {showDay ? <span className="mem-day">{day}</span> : null}
                 <span className="mem-chip">{e.kind}</span>
                 <span className="num mem-time">{clock(e.at)}</span>
-                <button type="button" className="mem-link mem-row-text" onClick={() => setEntry(e.id)}>
+                <button type="button" className="mem-row-text" onClick={() => setEntry(e.id)}>
                   {e.deleted ? <em>forgotten{e.deleted_reason ? ` (${e.deleted_reason})` : ""}</em> : e.text}
                 </button>
               </li>
@@ -394,7 +394,7 @@ export function Memory() {
             <li key={e.id} className="mem-row">
               <span className="mem-chip">episode</span>
               <span className="num mem-time">{dayLabel(e.at)}</span>
-              <button type="button" className="mem-link mem-row-text" onClick={() => setEpisode(e.id)}>
+              <button type="button" className="mem-row-text" onClick={() => setEpisode(e.id)}>
                 {e.gist || "(no gist yet)"}
               </button>
               <span className="mem-note">
@@ -414,7 +414,7 @@ export function Memory() {
             {(facts.data?.facts ?? []).map((f) => (
               <li key={f.id} className="mem-row">
                 <span className="mem-chip">{f.provenance}</span>
-                <button type="button" className="mem-link mem-row-text" onClick={() => setFact(f.id)}>
+                <button type="button" className="mem-row-text" onClick={() => setFact(f.id)}>
                   {f.statement}
                 </button>
                 <span className="mem-note">

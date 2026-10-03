@@ -4016,7 +4016,7 @@ pre.code {
 .mem-chip { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); background: var(--sunken); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
 .mem-time { color: var(--ink-3); font-size: 0.8rem; white-space: nowrap; }
 .mem-row-text { flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
-.mem-row-text:hover { color: var(--steel); }
+.mem-row-text:hover { color: var(--steel); text-decoration: underline; text-underline-offset: 3px; }
 .mem-row[data-deleted] .mem-row-text { text-decoration: line-through; }
 .mem-link { background: none; border: 0; padding: 0 2px; color: var(--steel); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font: inherit; }
 .mem-note { color: var(--ink-3); font-size: 0.85rem; margin: 6px 0; }
