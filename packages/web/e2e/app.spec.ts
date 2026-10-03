@@ -50,6 +50,8 @@ test("the back room is one menu away, and every screen renders from real state",
   await expect(page.getByRole("heading", { name: "The constitution" })).toBeVisible();
   await openMenu(page, "What Ava knows");
   await expect(page.getByRole("heading", { name: "What Ava knows about you" })).toBeVisible();
+  await openMenu(page, "Memory");
+  await expect(page.getByRole("heading", { name: "Memory", level: 1 })).toBeVisible();
   await openMenu(page, "Messages");
   await expect(page.getByRole("heading", { name: "Messages", level: 1 })).toBeVisible();
   await openMenu(page, "Log");
@@ -148,4 +150,38 @@ test("a phone shows the swipe hint once, until the first swipes", async ({ page 
   expect(await page.evaluate(() => window.localStorage.getItem("ava.swipes"))).toBe("2");
   await page.reload();
   await expect(page.locator(".swipe-hint")).toHaveCount(0);
+});
+
+test("memory: browse the raw log, open an entry, preview a forget — and keep it", async ({ page }) => {
+  await page.goto("/");
+  await openMenu(page, "Memory");
+  await expect(page.getByRole("heading", { name: "Memory", level: 1 })).toBeVisible();
+  // The raw log lists the seeded fixture entries.
+  const row = page.locator(".mem-row .mem-row-text").first();
+  await row.waitFor();
+  await row.click();
+  const entry = page.getByRole("dialog");
+  await expect(entry.locator(".mem-full")).toBeVisible();
+  // The forget flow always previews: exactly what would go, then a deliberate choice.
+  await entry.getByRole("button", { name: "Forget this" }).click();
+  const confirm = page.getByRole("dialog");
+  await expect(confirm.locator(".forget-warn")).toBeVisible();
+  await expect(confirm.locator(".forget-warn")).toContainText(/raw entr/);
+  await confirm.getByRole("button", { name: /^Keep/ }).click();
+  // Nothing was deleted: the log still shows the entry.
+  await expect(page.locator(".mem-row").first()).toBeVisible();
+});
+
+test("memory: search reaches the gists and facts, and the core and housekeeping panes render", async ({ page }) => {
+  await page.goto("/");
+  await openMenu(page, "Memory");
+  await page.locator(".mem-search input").fill("I-20");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.locator(".mem-row-text").filter({ hasText: /I-20|i-20/ }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await page.getByRole("radio", { name: "Facts", exact: true }).click();
+  await expect(page.locator(".mem-row, .empty").first()).toBeVisible();
+  await page.getByRole("radio", { name: "Core", exact: true }).click();
+  await expect(page.getByText("The core — what Ava durably knows")).toBeVisible();
+  await expect(page.getByText("Housekeeping")).toBeVisible();
 });

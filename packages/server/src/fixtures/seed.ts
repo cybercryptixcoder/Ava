@@ -346,6 +346,29 @@ export async function seedTestProfile(svc: Services, opts: { anchor?: string } =
   svc.models.setProvider(new FixtureMemoryProvider() as never);
   await svc.memoryProcessor.run({ maxBatches: 50 });
   svc.models.setProvider(provider as never);
+  // One core version and a superseded fact pair, so the memory screen has its full shape.
+  db.run("INSERT INTO cores (id, version, text_enc, tokens, created_at) VALUES (?, 1, ?, ?, ?)", [
+    newId("cor"),
+    svc.cipher.encrypt("- CS student at Penn State; splits time between State College and Bangalore.\n- OS Project 2's parser works. Quiz 4 is Thursday 10:10.\n- Practice problems beat re-reading for quiz prep."),
+    46,
+    clock.now().toISOString(),
+  ]);
+  const anyEntry = db.get<{ id: string }>("SELECT id FROM entries WHERE role = 'user' ORDER BY recorded_at LIMIT 1")?.id ?? null;
+  if (anyEntry) {
+    const fOld = newId("fct");
+    const fNew = newId("fct");
+    const now = clock.now().toISOString();
+    db.run(
+      "INSERT INTO facts (id, statement_enc, keywords_enc, entities_enc, refers_at, recorded_at, valid_from, valid_to, superseded_by, provenance, confidence, importance, source, status, created_at) VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, ?, 'stated', 0.9, 0.5, 'conversation', 'superseded', ?)",
+      [fOld, svc.cipher.encrypt("The I-20 appointment is on October 12"), now, now, now, fNew, now],
+    );
+    db.run(
+      "INSERT INTO facts (id, statement_enc, keywords_enc, entities_enc, refers_at, recorded_at, valid_from, provenance, confidence, importance, source, status, created_at) VALUES (?, ?, NULL, NULL, NULL, ?, ?, 'stated', 0.9, 0.5, 'conversation', 'current', ?)",
+      [fNew, svc.cipher.encrypt("The I-20 appointment moved to October 19"), now, now, now],
+    );
+    db.run("INSERT INTO fact_entries (fact_id, entry_id) VALUES (?, ?)", [fOld, anyEntry]);
+    db.run("INSERT INTO fact_entries (fact_id, entry_id) VALUES (?, ?)", [fNew, anyEntry]);
+  }
   return clock.now().toISOString();
 }
 
@@ -379,6 +402,8 @@ class FixtureMemoryProvider implements ModelProvider {
         ],
       });
     }
+    if (purpose === "memory.contradict") return JSON.stringify({ pairs: [] });
+    if (purpose === "memory.core") return JSON.stringify({ core: "- CS student at Penn State; splits time between State College and Bangalore.\n- OS Project 2's parser works. Quiz 4 is Thursday 10:10.\n- Practice problems beat re-reading for quiz prep." });
     throw new Error(`fixture memory provider got an unexpected purpose: ${purpose}`);
   }
 

@@ -51,6 +51,12 @@ const TOOLS: Anthropic.Tool[] = [
 
 const AffirmationCheck = z.object({ praise_sentence_indices: z.array(z.number().int()) });
 
+/** "Forget what I said about X" (typed or spoken): returns X, or null. */
+export function forgetIntent(text: string): string | null {
+  const m = /^\s*(?:please\s+)?(?:forget|delete) (?:what i said(?: about)?|about)\s+(.{2,120}?)[.!?]*\s*$/i.exec(text);
+  return m ? m[1].trim() : null;
+}
+
 export function lengthGuidance(userText: string, spoken: boolean): { note: string; maxTokens: number; kind: "quick" | "riff" | "dump" | "normal" } {
   const words = userText.trim().split(/\s+/).filter(Boolean).length;
   const asks = /\?|what do you think|thoughts\?|what if|how would|should i/i.test(userText);
@@ -94,6 +100,7 @@ export class Conversation {
       audio_id: (e.meta.audio_id as string) ?? null,
       cues: (e.meta.cues as { target: string; at_ms: number }[]) ?? null,
       trimmed_affirmation: !!e.meta.trimmed,
+      memory_used: (e.meta.memory_used as string[]) ?? null,
     };
   }
 
@@ -315,6 +322,24 @@ export class Conversation {
     if (!text) throw new Error("Say or type something first");
     const userTurn = this.saveTurn({ convId, role: "user", mode: "async", text, input_kind: input.input_kind });
     sink({ type: "turn", turn: userTurn });
+    // "Forget what I said about X" by voice: find it, confirm on a card, delete only on yes.
+    const forgetQuery = forgetIntent(text);
+    if (forgetQuery) {
+      sink({ type: "status", state: "thinking" });
+      let answer: string;
+      const ids = svc.forgetFlow.resolve({ query: forgetQuery }).filter((id) => id !== userTurn.id);
+      if (ids.length) {
+        const closure = svc.forgetFlow.preview(ids);
+        svc.cards.forForget(closure, forgetQuery);
+        answer = `I found ${closure.entries.length} raw ${closure.entries.length === 1 ? "entry" : "entries"} in what you said about that, and put a confirmation on your stack. Nothing is gone until you answer it.`;
+      } else {
+        answer = `I looked, and there's nothing about "${forgetQuery}" in memory to forget.`;
+      }
+      const avaTurn = this.saveTurn({ convId, role: "ava", mode: "async", text: answer });
+      sink({ type: "done", turn: avaTurn });
+      sink({ type: "status", state: "idle" });
+      return;
+    }
     const evId = evidence.add({ kind: "transcript", source: "voice", content: { entry_id: userTurn.id }, summary: text.slice(0, 280), source_ref: userTurn.id });
 
     // 1. Extraction first (Haiku): what he stated is filed now, with undo; what's ambiguous becomes a card.

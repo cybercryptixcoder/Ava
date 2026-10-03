@@ -15,6 +15,7 @@ import {
   type FiledEntry,
   type HydratedItem,
   type Item,
+  type MemoryForgetClosure,
   type MessageView,
   type Proposal,
   type QuestionView,
@@ -33,13 +34,14 @@ type Act =
   | { t: "answer"; text: string }
   | { t: "open_action" }
   | { t: "open_artifact" }
+  | { t: "forget"; entry_ids: string[] }
   | { t: "ack" };
 
 interface StoredOption extends CardOption {
   act: Act;
 }
 
-export type CardSource = "message" | "rule" | "belief" | "proposal" | "question" | "filing" | "artifact" | "action" | "review";
+export type CardSource = "message" | "rule" | "belief" | "proposal" | "question" | "filing" | "artifact" | "action" | "review" | "memory";
 
 interface Card {
   id: string;
@@ -233,6 +235,26 @@ export class CardStore {
       options: [opt("file", "Yes, file it", { t: "proposal", accept: true }), opt("skip", "Leave it out", { t: "proposal", accept: false })],
       data: { quote: p.reason },
       priority: 60,
+    });
+  }
+
+  /**
+   * The voice forget flow's confirmation: nothing is deleted until he answers this.
+   */
+  forForget(closure: MemoryForgetClosure, query: string): Card {
+    const facts = closure.facts.length;
+    const eps = closure.episodes_stale.length + closure.episodes_removed.length;
+    const why = `${closure.entries.length} raw ${closure.entries.length === 1 ? "entry" : "entries"}${facts ? `, ${facts} derived ${facts === 1 ? "fact" : "facts"}` : ""}${eps ? `, ${eps} ${eps === 1 ? "gist" : "gists"}` : ""} — this can't be undone.`;
+    return this.create({
+      kind: "pick",
+      source: "memory",
+      ref_id: null,
+      item_ids: [],
+      title: `Forget what you said about "${query}"?`,
+      why,
+      options: [opt("forget", "Forget it", { t: "forget", entry_ids: closure.entries.map((e) => e.id) }), opt("keep", "Keep it", { t: "ack" })],
+      data: { forget: true },
+      priority: 92,
     });
   }
 
@@ -651,6 +673,10 @@ export class CardStore {
         return { summary: "Review it before it goes", open: { kind: "action", id: c.ref_id! }, exec_task_id: null, keepOpen: true };
       case "open_artifact":
         return { summary: "", open: { kind: "artifact", id: c.ref_id! }, exec_task_id: null };
+      case "forget": {
+        const r = await this.svc.forgetFlow.apply(a.entry_ids, "asked Ava to forget it");
+        return { summary: r.summary, ...none };
+      }
       case "ack":
         return { summary: "", ...none };
     }

@@ -53,6 +53,7 @@ const SCREENS = [
   { name: "tasks", path: "/tasks" },
   { name: "rules", path: "/rules" },
   { name: "knows", path: "/knows" },
+  { name: "memory", path: "/memory" },
   { name: "messages", path: "/messages" },
   { name: "log", path: "/log" },
   { name: "settings", path: "/settings" },

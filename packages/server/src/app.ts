@@ -19,6 +19,7 @@ import { Embeddings } from "./memory/embeddings";
 import { Core } from "./memory/core";
 import { Contradictor } from "./memory/contradict";
 import { Consolidation } from "./memory/consolidate";
+import { ForgetFlow } from "./memory/forget";
 import { BeliefStore } from "./state/beliefs";
 import { ProposalStore } from "./state/proposals";
 import { QuestionStore } from "./state/questions";
@@ -127,6 +128,7 @@ export function buildApp(opts: BuildOptions = {}): App {
   svc.core = new Core(svc);
   svc.contradict = new Contradictor(svc);
   svc.consolidation = new Consolidation(svc);
+  svc.forgetFlow = new ForgetFlow(svc);
   // The derived layers watch the log: every append schedules processing.
   svc.memory.onAppend(() => svc.memoryProcessor.notify());
   svc.memory.onAppend((e) => svc.memorySearch.indexEntry(e));

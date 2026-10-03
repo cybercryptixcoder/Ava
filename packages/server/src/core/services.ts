@@ -16,6 +16,7 @@ import type { Embeddings } from "../memory/embeddings";
 import type { Core } from "../memory/core";
 import type { Contradictor } from "../memory/contradict";
 import type { Consolidation } from "../memory/consolidate";
+import type { ForgetFlow } from "../memory/forget";
 import type { BeliefStore } from "../state/beliefs";
 import type { ProposalStore } from "../state/proposals";
 import type { QuestionStore } from "../state/questions";
@@ -73,6 +74,8 @@ export interface Services {
   contradict: Contradictor;
   /** The nightly consolidation wake: the only place derived layers get revised. */
   consolidation: Consolidation;
+  /** The forget flow: resolution, preview and the only deletion path. */
+  forgetFlow: ForgetFlow;
   beliefs: BeliefStore;
   proposals: ProposalStore;
   threads: ThreadStore;
