@@ -11,6 +11,7 @@ export function registerMemoryRoutes(app: FastifyInstance, svc: Services): void 
     episodes: svc.memoryProcessor.episodes(),
     facts: svc.memoryProcessor.facts(),
     pending: svc.memoryProcessor.pending(),
+    embeddings: svc.embeddings.count(),
   }));
   app.post("/api/memory/backfill", async () => {
     const backfill = svc.backfill.runAll();
@@ -31,4 +32,5 @@ export function registerMemoryRoutes(app: FastifyInstance, svc: Services): void 
     const pack = await svc.retriever.retrieve(q, { budgetTokens: req.body?.budget_tokens });
     return { pack };
   });
+  app.post("/api/memory/reembed", async () => ({ ok: true, count: await svc.embeddings.reembedAll(), embeddings: svc.embeddings.count() }));
 }

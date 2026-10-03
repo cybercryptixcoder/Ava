@@ -12,6 +12,7 @@ import type { Backfill } from "../memory/backfill";
 import type { MemoryProcessor } from "../memory/processor";
 import type { MemorySearch } from "../memory/search";
 import type { Retriever } from "../memory/retriever";
+import type { Embeddings } from "../memory/embeddings";
 import type { BeliefStore } from "../state/beliefs";
 import type { ProposalStore } from "../state/proposals";
 import type { QuestionStore } from "../state/questions";
@@ -61,6 +62,8 @@ export interface Services {
   memorySearch: MemorySearch;
   /** Assembles the context pack for a message (agent or direct). */
   retriever: Retriever;
+  /** Embeddings behind an adapter: local default, optional hosted, lexical fallback. */
+  embeddings: Embeddings;
   beliefs: BeliefStore;
   proposals: ProposalStore;
   threads: ThreadStore;

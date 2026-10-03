@@ -7,6 +7,7 @@
     "dev": "tsx watch --clear-screen=false src/main.ts",
     "build": "node build.mjs",
     "config:check": "tsx src/cli/config-check.ts",
+    "reembed": "tsx src/cli/reembed.ts",
     "vapid": "tsx src/cli/vapid.ts",
     "hash-password": "tsx src/cli/hash-password.ts",
     "seed:test": "tsx src/cli/seed-test.ts",
@@ -36,5 +37,8 @@
     "@types/ws": "^8.18.2",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15"
+  },
+  "optionalDependencies": {
+    "@huggingface/transformers": "^4.3.0"
   }
 }

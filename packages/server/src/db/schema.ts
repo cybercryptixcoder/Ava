@@ -529,4 +529,16 @@ export const MIGRATIONS: string[] = [
   CREATE TABLE fact_entries (fact_id TEXT NOT NULL, entry_id TEXT NOT NULL, PRIMARY KEY (fact_id, entry_id));
   CREATE INDEX fact_entries_entry ON fact_entries(entry_id);
   `,
+  /* 5: embeddings (encrypted vectors) for semantic memory search */ `
+  CREATE TABLE memory_embeddings (
+    ref_kind TEXT NOT NULL,
+    ref_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dims INTEGER NOT NULL,
+    vec_enc TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (ref_kind, ref_id, model)
+  );
+  CREATE INDEX memory_embeddings_model ON memory_embeddings(model, ref_kind);
+  `,
 ];

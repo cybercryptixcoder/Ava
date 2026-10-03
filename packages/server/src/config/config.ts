@@ -44,6 +44,8 @@ export interface AppConfig {
   wisprMcpUrl: string;
   deadmanPingUrl: string | null;
   collectorToken: string | null;
+  /** Semantic memory search: an optional hosted embeddings endpoint; unset means local/lexical. */
+  embeddings: { url: string | null; key: string | null; model: string };
 }
 
 function findRoot(start: string): string {
@@ -158,6 +160,11 @@ export function loadConfig(overrides: Partial<AppConfig> & { rootDir?: string } 
     wisprMcpUrl: env("WISPR_MCP_URL") ?? "https://api.wisprflow.ai/connect/mcp",
     deadmanPingUrl: env("DEADMAN_PING_URL") ?? null,
     collectorToken: env("COLLECTOR_TOKEN") ?? null,
+    embeddings: {
+      url: env("EMBEDDINGS_URL") ?? null,
+      key: env("EMBEDDINGS_API_KEY") ?? null,
+      model: env("EMBEDDINGS_MODEL") ?? "text-embedding-3-small",
+    },
     ...overrides,
   };
   return cfg;

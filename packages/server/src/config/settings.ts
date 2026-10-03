@@ -119,8 +119,12 @@ export const SettingsSchema = z.object({
       relevance: z.number().min(0).max(5),
       recency: z.number().min(0).max(5),
       importance: z.number().min(0).max(5),
+      /** How much semantic (embedding) similarity adds to keyword relevance. */
+      semantic: z.number().min(0).max(5),
       half_life_days: z.number().min(1).max(365),
     }),
+    /** Semantic search provider: auto picks local, then hosted, then the built-in lexical fallback. */
+    embeddings: z.object({ provider: z.enum(["auto", "local", "hosted", "lexical"]) }),
     /** Skip retrieval entirely for messages that clearly need no memory. */
     fast_path: z.boolean(),
     /** The retriever runs as a cheap-model sub-agent; "direct" skips the agent. */
@@ -210,7 +214,8 @@ export function defaultSettings(envDefaults: {
       context_budget_tokens: 6000,
       recent_turns: 10,
       recent_budget_tokens: 3000,
-      ranking: { relevance: 1, recency: 0.35, importance: 0.25, half_life_days: 30 },
+      ranking: { relevance: 1, recency: 0.35, importance: 0.25, semantic: 0.5, half_life_days: 30 },
+      embeddings: { provider: "auto" },
       fast_path: true,
       retriever: { mode: "agent", max_rounds: 4 },
     },
