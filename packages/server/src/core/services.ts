@@ -10,6 +10,8 @@ import type { EvidenceStore } from "../state/evidence";
 import type { MemoryStore } from "../state/memory";
 import type { Backfill } from "../memory/backfill";
 import type { MemoryProcessor } from "../memory/processor";
+import type { MemorySearch } from "../memory/search";
+import type { Retriever } from "../memory/retriever";
 import type { BeliefStore } from "../state/beliefs";
 import type { ProposalStore } from "../state/proposals";
 import type { QuestionStore } from "../state/questions";
@@ -55,6 +57,10 @@ export interface Services {
   backfill: Backfill;
   /** Builds episodes, gists and fact keys from uncovered raw entries. */
   memoryProcessor: MemoryProcessor;
+  /** In-memory (from decrypted rows) keyword index over the log and its layers. */
+  memorySearch: MemorySearch;
+  /** Assembles the context pack for a message (agent or direct). */
+  retriever: Retriever;
   beliefs: BeliefStore;
   proposals: ProposalStore;
   threads: ThreadStore;

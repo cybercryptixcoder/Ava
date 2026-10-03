@@ -105,6 +105,27 @@ export const SettingsSchema = z.object({
   }),
   executor: z.object({ max_sessions: z.number().int().min(1).max(20), session_spacing_minutes: z.number().int().min(5) }),
   beliefs: z.object({ half_life_days: z.number().min(1), inferred_min_confidence: z.number().min(0).max(1) }),
+  memory: z.object({
+    /** The core (L3) block's budget, in tokens. */
+    core_budget_tokens: z.number().int().min(200).max(4000),
+    /** The retrieved context pack's budget, in tokens. */
+    context_budget_tokens: z.number().int().min(500).max(20000),
+    /** Recent window: the last N turns of the current conversation. */
+    recent_turns: z.number().int().min(2).max(30),
+    /** The recent window's token cap, whichever is smaller wins. */
+    recent_budget_tokens: z.number().int().min(500).max(8000),
+    /** Ranking: weighted mix of relevance, recency (exponential decay) and importance. */
+    ranking: z.object({
+      relevance: z.number().min(0).max(5),
+      recency: z.number().min(0).max(5),
+      importance: z.number().min(0).max(5),
+      half_life_days: z.number().min(1).max(365),
+    }),
+    /** Skip retrieval entirely for messages that clearly need no memory. */
+    fast_path: z.boolean(),
+    /** The retriever runs as a cheap-model sub-agent; "direct" skips the agent. */
+    retriever: z.object({ mode: z.enum(["agent", "direct"]), max_rounds: z.number().int().min(1).max(8) }),
+  }),
   first_run_complete: z.boolean(),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -184,6 +205,15 @@ export function defaultSettings(envDefaults: {
     retention: { raw_activity_days: 3, raw_audio_days: 7, model_io_days: 30, snapshots_days: 14 },
     executor: { max_sessions: 6, session_spacing_minutes: 20 },
     beliefs: { half_life_days: 45, inferred_min_confidence: 0.5 },
+    memory: {
+      core_budget_tokens: 1500,
+      context_budget_tokens: 6000,
+      recent_turns: 10,
+      recent_budget_tokens: 3000,
+      ranking: { relevance: 1, recency: 0.35, importance: 0.25, half_life_days: 30 },
+      fast_path: true,
+      retriever: { mode: "agent", max_rounds: 4 },
+    },
     first_run_complete: false,
   };
 }
