@@ -284,8 +284,6 @@ export interface CardResult {
 
 export interface StackView {
   cards: CardView[];
-  /** Active cards waiting beyond the ones shown. */
-  waiting: number;
   all_clear: { next_check_in: WakeView | null } | null;
   /** The optional spoken morning version: a few sentences pointing at the cards. */
   morning: { brief_id: string; text: string } | null;

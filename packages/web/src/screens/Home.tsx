@@ -343,8 +343,7 @@ export function Home() {
             {stack.all_clear?.next_check_in ? <p className="clear-next">Ava checks in again {nextLabel(stack.all_clear.next_check_in.due_at)}.</p> : null}
           </div>
         )}
-        {stack && stack.waiting > 0 ? <p className="stack-more">{stack.waiting} more waiting</p> : null}
-      </section>
+        </section>
 
       <footer className="home-bottom">
         <div className="home-said" aria-live="polite">
