@@ -18,6 +18,14 @@ All of it is in this repository, with no placeholders in real code paths. Withou
 - **Security**: password login with signed server-side sessions, loopback-only access when no password is set, refusal to start in production without secrets, field-level encryption at rest, retention, export and per-source deletion.
 - **Repository**: one-command start for development (`npm run dev`, `npm run dev:test`) and production (`npm start`, Docker Compose with a Cloudflare Tunnel), README, [architecture](docs/architecture.md), [design plan](docs/design-plan.md), screenshots, tests, fixtures kept apart in a test profile.
 
+## The memory system
+
+Built after Parts 1–4 and merged as its own PR series: one append-only raw log (`entries` — every turn, transcript, import, sent mail, item change, card response, answer and artifact, verbatim and encrypted), derived layers built only from it (episodes + gists, temporal facts with supersession, a versioned core), a read path that assembles every conversation call from the core + a freshly retrieved context pack + a capped recent window (typically around 10k input tokens or less), a nightly consolidation wake at 03:00 that is the only place derived layers get revised, a fully previewed forget flow (Memory screen + "forget what I said about X" by voice), and evaluation: deterministic pack checks in CI plus a graded three-scenario suite that runs nightly and on demand.
+
+**The one thing that can't be recovered**: before this work the build purged raw chat-export import text and sent-mail content after extracting facts from it. Anything already purged then is gone; the backfill counts what it found and the developer panel says so. From here on, text records never purge — audio and raw activity still do.
+
+Commands: `npm run memory:reembed` (rebuild every semantic vector for the current embedder), `npm run memory:eval` (run the graded suite now; exit code = pass/fail). The Memory screen (menu → Memory) browses the log, gists, facts and core, and is where forgetting happens.
+
 ## What was verified, and how
 
 - **83 unit and end-to-end tests** (`npm test`, Vitest, no network): rule evaluation, scheduler validation and budgets, time-zone switching, the message validator, caps, quiet hours and class blocks, cooldowns and snoozes, the affirmation budget, module schemas, speech adaptation, turn detection, chat and saved-item parsers, encryption, auth and access control, retention, the collector's merging, the test-profile seed, and the stack (threads and the grouping cap, filing with undo, card responses and returns, push caps, the morning stack, the rule-approval and belief cadences, the calendar endpoint). Four end-to-end flows run through the real gateway, validator, scheduler and database with a scripted model provider: brain dump to confirmed items (with the deadline wakes that follow), wake to validated message (and a draft that invents facts being stopped), accepted suggestion to executor artifact with a plan-fit report, and rule proposal to shadow run to approval.
@@ -38,6 +46,7 @@ No API keys or third-party accounts were available in this environment, and outb
 4. **Google Calendar and Gmail OAuth**, calendar push notifications, and Gmail sending.
 5. **Wispr Flow.** Ava uses the MCP SDK's OAuth client against Wispr's official remote MCP endpoint (`WISPR_MCP_URL`, default `https://api.wisprflow.ai/connect/mcp`) with dynamic client registration. I couldn't confirm that endpoint URL or that Wispr allows third-party clients to register; if connecting fails, Settings shows Wispr's error. Dictating with Wispr Flow into Talk works regardless, since it simply types.
 6. **Web push to a real device** and the installed PWA on iOS.
+7. **The graded memory evaluation** has only run against the scripted provider here. Run `npm run memory:eval` once with real keys; its grading and the replay scenarios are the parts most likely to need tuning on real data.
 
 ## Setting it up
 

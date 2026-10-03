@@ -26,11 +26,31 @@ Nothing runs continuously. Between wakes the server is idle apart from HTTP requ
 
 **Rhythms** (`state/rhythms.ts`) are computed once a day from activity sessions and calendar history (when you tend to study, work, be on the laptop) and proposed as observed beliefs with their numbers attached.
 
+## Memory
+
+The memory system (`state/memory.ts`, `memory/`) is the long-term half of "what Ava knows": one append-only raw log, derived layers built only from it, and a read path that assembles a small, grounded context for every call.
+
+**L0 — the raw log.** Every turn of every conversation (async and live), every transcript, chat-import row, sent mail, item change, card response, question answer and artifact is appended to `entries` as it is: verbatim, encrypted, with both when it happened and when it was recorded. Appends are append-only — nothing is edited or deleted except through the forget flow — and everything else in the system is derived from these rows.
+
+**L1 — episodes and gists.** A background processor (`memory/processor.ts`) covers new raw entries in coherent batches (a conversation session within a time gap; one standalone record otherwise): a cheap model writes a gist (1–3 sentences, keywords, entities, importance) and extracts atomic facts from Shreyas's own words. Episodes join a recent same-session episode when the batch continues it; joins mark the gist stale, and consolidation regenerates stale gists from the raw entries. Facts are add-only rows linked to the raw ids they came from.
+
+**L2 — temporal facts.** Facts get a `valid_from`; when a new fact contradicts a current one, a cheap-model judge (`memory/contradict.ts`) decides and the old fact's `valid_to` is set with a `superseded_by` link — replaced, never overwritten; the change stays visible as history and is logged with its reason.
+
+**L3 — the core.** A small, versioned block of durable knowledge (who he is, standing preferences, active threads and their state), rebuilt from L2, threads and recent gists, read as the cache breakpoint of the conversation prompt. The conversation model never edits it.
+
+**The read path** (`memory/retriever.ts`). For every message, unless the fast path skips it: keyword search over an in-memory FTS index built from decrypted rows (`memory/search.ts`) plus semantic neighbors from embeddings (`memory/embeddings.ts`; the local MiniLM model by default, so nothing leaves the server, with an optional hosted endpoint via `EMBEDDINGS_URL` and a deterministic lexical fallback for CI), ranked by relevance, recency and importance into a context pack — gists, facts and verbatim excerpts with their ref ids — under a token budget, optionally routed by a cheap-model sub-agent. Conversation calls are assembled most-stable-first: system instructions, the core (the prompt-cache breakpoint), then the pack, the recent window (last turns verbatim, capped by count and tokens) and the new message. The prompt's grounding rule: past facts only as they appear in the pack; say plainly you don't remember when it's empty. Every reply records which refs it drew on and its per-segment token counts.
+
+**Consolidation** (the nightly system wake, `memory/consolidate.ts`) is the only place derived layers get revised: stale gists regenerate from raw (episodes whose raw content is entirely forgotten are removed with it), the core is rebuilt when something new landed, near-duplicate current facts are linked to a canonical row (never deleted), importance is recomputed deterministically, reflections enter the inferred-belief flow only when they cite at least three raw entries, and the graded evaluation runs — all bounded by a per-run model-call budget and recorded for the developer panel.
+
+**Forgetting** (`memory/forget.ts`) is the only deletion path. Raw entries become content-free tombstones; index text, vectors, derived facts that lose their last raw source, affected gists and the core all follow — immediately, not at night. Every deletion runs through a preview of exactly what it would remove, from the Memory screen or by voice ("forget what I said about X" → a confirmation card; nothing deletes until it's answered).
+
+**Evaluation.** Deterministic checks in CI (a planted fact must reach the pack; every ref in a pack must exist in the database) plus a graded three-scenario suite — direct recall, honest abstention, a visible change — run nightly with consolidation and on demand (`npm run memory:eval`); results show over time in the developer panel.
+
 ## When Ava wakes
 
 The scheduler (`scheduler/scheduler.ts`) is the only thing that runs code on a timer. Wake kinds:
 
-- **System-anchored**: heartbeat every 3 hours in waking hours, the morning brief (08:30), the evening plan (21:30), the weekly review (Sunday). They are anchored to local times and belong to the system: neither Ava nor a rule can cancel them.
+- **System-anchored**: heartbeat every 3 hours in waking hours, the morning brief (08:30), the evening plan (21:30), the weekly review (Sunday), and nightly memory consolidation (03:00). They are anchored to local times and belong to the system: neither Ava nor a rule can cancel them.
 - **Deadline wakes**: 14, 3 and 1 days before each deadline, at a set local time; wakes at the same moment are merged.
 - **Lookahead wakes**: each heartbeat looks at the next few hours and schedules precise wakes for good moments (5 minutes after class ends, shortly before a free block), so nothing important falls between heartbeats.
 - **Event wakes**: a change you make (or a calendar push) coalesces into one wake a minute later.
@@ -81,7 +101,7 @@ The **morning stack** (`planner/brief.ts`) is composed at the brief time: stale 
 
 ## Conversation
 
-`conversation/conversation.ts`. An async turn: your words are stored as evidence; a fast extraction call turns them into changes, which are filed directly with per-item undo (anything ambiguous or consequential becomes a card instead); then the conversation model streams a short reply that shows briefly on the main page and lives in the transcript sheet. The reply protocol (`conversation/protocol.ts`) allows `<propose>` for changes Ava wants confirmed and `<style_note>` when you react to how she talks; results otherwise show up as changes to the stack, not as a canvas of modules. Ava sees his stack every turn and knows what is behind each card.
+`conversation/conversation.ts`. An async turn: your words are appended to the raw log (and referenced as evidence); a fast extraction call turns them into changes, which are filed directly with per-item undo (anything ambiguous or consequential becomes a card instead); then the conversation model streams a short reply that shows briefly on the main page and lives in the transcript sheet. Each turn is assembled from the core, a freshly retrieved context pack and the recent window ([Memory](#memory) above); replies ground on what the pack contains and record the refs they used. The reply protocol (`conversation/protocol.ts`) allows `<propose>` for changes Ava wants confirmed and `<style_note>` when you react to how she talks; results otherwise show up as changes to the stack, not as a canvas of modules.
 
 The canvas module machinery (`canvas/`, `packages/shared/src/canvas.ts`) remains in the codebase — module specs validated against the typed vocabulary and hydrated from real state — but the main page no longer renders modules.
 
@@ -91,7 +111,7 @@ The canvas module machinery (`canvas/`, `packages/shared/src/canvas.ts`) remains
 
 `voice/`. Speech adaptation (`packages/shared/src/speech.ts`, `voice/speech-adapt.ts`) turns written text into speakable text (clock times, abbreviations, your pronunciations) while keeping cue offsets, then maps word timings back to cues so playback can follow the words. ElevenLabs returns character alignment (converted to words); Cartesia returns word timestamps; if a model returns none, forced alignment is used.
 
-**Live mode** (`voice/live.ts`) runs over one WebSocket: 16 kHz microphone audio up, 24 kHz speech down. Streaming recognition (Deepgram Flux or AssemblyAI) provides semantic end-of-turn with thresholds set by your patience setting; on top of that `voice/turn-detector.ts` holds the turn open when the last words sound unfinished ("…and", "so the") and joins whatever you say next. An early end-of-turn signal starts the model speculatively. Sentences stream into text-to-speech as they complete. Speaking over Ava stops her within a frame or two (the browser stops playback locally and the server cancels generation). Every turn records its stages (end-of-turn detection, model first token, first sentence, first audio, playback) in `latency_samples`.
+**Live mode** (`voice/live.ts`) runs over one WebSocket: 16 kHz microphone audio up, 24 kHz speech down. Streaming recognition (Deepgram Flux or AssemblyAI) provides semantic end-of-turn with thresholds set by your patience setting; on top of that `voice/turn-detector.ts` holds the turn open when the last words sound unfinished ("…and", "so the") and joins whatever you say next. An early end-of-turn signal starts the model speculatively, and retrieval for the reply starts speculatively on the partial transcript; at assembly time it gets a small grace window (`memory.live_grace_ms`) and falls back to the core plus the recent window when it isn't ready, so live replies never wait on memory. Sentences stream into text-to-speech as they complete. Speaking over Ava stops her within a frame or two (the browser stops playback locally and the server cancels generation). Every turn records its stages (end-of-turn detection, retrieval, model first token, first sentence, first audio, playback) in `latency_samples`.
 
 ## Sources
 
@@ -122,4 +142,4 @@ Card anatomy follows the old message anatomy: a first line that is the point; a 
 
 ## Data
 
-One SQLite file per profile (`data/real/ava.db`, `data/test/ava.db`) with forward-only migrations (`db/schema.ts`). Main tables: `items`, `item_history`, `evidence`, `beliefs`, `proposals`, `rules`, `rule_firings`, `cooldowns`, `wakes`, `messages`, `log`, `model_calls`, `plans`, `plan_blocks`, `questions`, `briefs`, `turns`, `canvas_modules`, `exec_tasks`, `artifacts`, `external_actions`, `sources`, `activity_sessions`, `snapshots`, `audio_files`, `latency_samples`.
+One SQLite file per profile (`data/real/ava.db`, `data/test/ava.db`) with forward-only migrations (`db/schema.ts`). Main tables: `items`, `item_history`, `evidence`, `beliefs`, `proposals`, `rules`, `rule_firings`, `cooldowns`, `wakes`, `messages`, `log`, `model_calls`, `plans`, `plan_blocks`, `questions`, `briefs`, `canvas_modules`, `exec_tasks`, `artifacts`, `external_actions`, `sources`, `activity_sessions`, `snapshots`, `audio_files`, `latency_samples`. The memory system adds `entries` (the raw log; it replaced the old `turns` table), `entry_links`, `episodes`, `episode_entries`, `facts`, `fact_entries`, `cores`, `memory_embeddings`, `memory_state`, and `memory_eval_runs`.
