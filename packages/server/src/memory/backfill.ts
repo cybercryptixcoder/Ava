@@ -267,6 +267,8 @@ export class Backfill {
         "memory.backfill",
         `Raw log backfill complete: ${st.copied.turns} turns, ${st.copied.evidence} sourced entries, ${st.copied.history} item events copied${st.skipped_purged ? `; ${st.skipped_purged} previously purged records can't be recovered` : ""}`,
       );
+      // Bulk-copied rows bypassed the append watchers; let the search index catch up lazily.
+      this.svc.memorySearch.markStale();
     }
     memory.setState("backfill", st);
     return st.phase !== "done";

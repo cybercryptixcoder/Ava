@@ -40,8 +40,17 @@ export interface EntryLink {
   created_at: string;
 }
 
+export interface AppendedEntry {
+  id: string;
+  kind: EntryKind;
+  source: string;
+  text: string;
+  occurred_at: string;
+}
+
 export class MemoryStore {
-  private appended: (() => void)[] = [];
+  private appended: ((e: AppendedEntry) => void)[] = [];
+  private forgotten: ((ids: string[]) => void)[] = [];
 
   constructor(
     private db: Db,
@@ -50,8 +59,18 @@ export class MemoryStore {
   ) {}
 
   /** Listeners fire after every append — the derived layers watch the log, not the writers. */
-  onAppend(fn: () => void): void {
+  onAppend(fn: (e: AppendedEntry) => void): void {
     this.appended.push(fn);
+  }
+
+  /** Listeners fire when the explicit forget flow blanks entries. */
+  onForget(fn: (ids: string[]) => void): void {
+    this.forgotten.push(fn);
+  }
+
+  /** Entry ids covered by an episode, in order. */
+  episodeEntries(episodeId: string): string[] {
+    return this.db.all<{ entry_id: string }>("SELECT entry_id FROM episode_entries WHERE episode_id = ? ORDER BY position, entry_id", [episodeId]).map((r) => r.entry_id);
   }
 
   /**
@@ -89,7 +108,7 @@ export class MemoryStore {
     );
     for (const fn of this.appended) {
       try {
-        fn();
+        fn({ id, kind: e.kind, source: e.source, text: e.text, occurred_at: e.occurred_at ?? now });
       } catch {
         /* watchers are best-effort; the log entry is already safe */
       }
@@ -198,10 +217,23 @@ export class MemoryStore {
   forget(ids: string[], reason: string): number {
     const now = this.clock.now().toISOString();
     let n = 0;
+    const done: string[] = [];
     for (const id of ids) {
-      n += this.db.run("UPDATE entries SET text_enc = '', raw_enc = NULL, meta = '{}', deleted_at = ?, deleted_reason = ? WHERE id = ? AND deleted_at IS NULL", [now, reason, id]).changes;
+      const changed = this.db.run("UPDATE entries SET text_enc = '', raw_enc = NULL, meta = '{}', deleted_at = ?, deleted_reason = ? WHERE id = ? AND deleted_at IS NULL", [now, reason, id]).changes;
+      if (changed) done.push(id);
+      n += changed;
     }
-    if (n) this.logForget(ids.length, reason);
+    if (n) {
+      const seen = [...new Set(ids.filter((id) => done.includes(id)))];
+      for (const fn of this.forgotten) {
+        try {
+          fn(seen);
+        } catch {
+          /* watchers are best-effort */
+        }
+      }
+      this.logForget(ids.length, reason);
+    }
     return n;
   }
 

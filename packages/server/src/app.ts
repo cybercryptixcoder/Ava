@@ -13,6 +13,8 @@ import { EvidenceStore } from "./state/evidence";
 import { MemoryStore } from "./state/memory";
 import { Backfill } from "./memory/backfill";
 import { MemoryProcessor } from "./memory/processor";
+import { MemorySearch } from "./memory/search";
+import { Retriever } from "./memory/retriever";
 import { BeliefStore } from "./state/beliefs";
 import { ProposalStore } from "./state/proposals";
 import { QuestionStore } from "./state/questions";
@@ -115,8 +117,14 @@ export function buildApp(opts: BuildOptions = {}): App {
   svc.wake = new WakeProcedure(svc);
   svc.backfill = new Backfill(svc);
   svc.memoryProcessor = new MemoryProcessor(svc);
+  svc.memorySearch = new MemorySearch(svc);
+  svc.retriever = new Retriever(svc);
   // The derived layers watch the log: every append schedules processing.
   svc.memory.onAppend(() => svc.memoryProcessor.notify());
+  svc.memory.onAppend((e) => svc.memorySearch.indexEntry(e));
+  svc.memory.onForget((ids) => {
+    for (const id of ids) svc.memorySearch.removeRef("entry", id);
+  });
 
   // Default voices from env if not chosen yet.
   const v = settings.get().voice;

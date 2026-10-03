@@ -199,6 +199,7 @@ export class MemoryProcessor {
     const facts = await this.factsFor(batch);
     const episodeId = this.saveEpisode(batch, gist);
     const nFacts = this.saveFacts(batch, facts, episodeId);
+    this.svc.memorySearch.indexEpisode(episodeId);
     return { episodes: 1, facts: nFacts };
   }
 
@@ -297,6 +298,7 @@ export class MemoryProcessor {
         [id, cipher.encrypt(f.statement), cipher.encJson(f.keywords), cipher.encJson(f.entities), f.refers_at, now, f.provenance, f.confidence, f.importance, batch[0].source, now],
       );
       for (const entryId of sources) db.run("INSERT OR IGNORE INTO fact_entries (fact_id, entry_id) VALUES (?, ?)", [id, entryId]);
+      this.svc.memorySearch.indexFact(id);
       n += 1;
     }
     if (n) log.info("memory.facts", `Extracted ${n} ${n === 1 ? "fact" : "facts"} from ${batch.length} raw ${batch.length === 1 ? "entry" : "entries"}`, { episode_id: episodeId, facts: n });
