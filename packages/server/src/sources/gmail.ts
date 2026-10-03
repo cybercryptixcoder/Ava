@@ -94,10 +94,21 @@ export class GmailSentSource implements SourcePlugin {
       emails.push({ id: m.id, to, subject: h("subject"), date: new Date(Number(full.internalDate)).toISOString(), text });
     }
     let made = 0;
+    const entryByRef = new Map<string, string>();
+    for (const e of emails) {
+      // His sent words go into the raw log permanently; evidence keeps the reference.
+      const entryId = this.svc.memory.append({
+        kind: "sent_mail",
+        source: this.id,
+        occurred_at: e.date,
+        text: `To ${e.to} — "${e.subject}"\n${e.text}`,
+        meta: { to: e.to, subject: e.subject, message_id: e.id },
+      });
+      entryByRef.set(e.id, entryId);
+    }
     if (emails.length && models.available) {
-      const purge = new Date(clock.now().getTime() + this.svc.settings.get().retention.raw_activity_days * 86_400_000).toISOString();
       const evIds = emails.map((e) =>
-        evidence.add({ kind: "email", source: this.id, source_ref: e.id, occurred_at: e.date, summary: `Sent to ${e.to}: ${e.subject}`, content: e, purge_after: purge }),
+        evidence.add({ kind: "email", source: this.id, source_ref: e.id, occurred_at: e.date, summary: `Sent to ${e.to}: ${e.subject}`, content: { entry_id: entryByRef.get(e.id)!, id: e.id, to: e.to, subject: e.subject, date: e.date } }),
       );
       const text = emails.map((e) => `### To ${e.to} — "${e.subject}" (${e.date.slice(0, 10)})\n${e.text}`).join("\n\n");
       const changes = await extract(this.svc, text, {
@@ -136,6 +147,7 @@ export class GmailSentSource implements SourcePlugin {
   deleteData(): number {
     this.svc.db.run("DELETE FROM proposals WHERE origin = ? AND status = 'pending'", [this.id]);
     writeSourceState(this.svc, this.id, {});
+    this.svc.memory.forgetBySource(this.id, "you deleted the Gmail source data");
     return this.svc.evidence.deleteBySource(this.id);
   }
 }

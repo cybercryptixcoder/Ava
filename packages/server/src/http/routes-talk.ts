@@ -92,9 +92,10 @@ export function registerTalkRoutes(app: FastifyInstance, svc: Services): void {
 
   /** Speak an earlier reply on demand (the play control when autoplay is off). */
   app.post<{ Params: { id: string } }>("/api/turns/:id/speak", async (req, reply) => {
-    const t = svc.db.get<{ raw_enc: string | null; text_enc: string; audio_id: string | null; cues: string | null }>("SELECT raw_enc, text_enc, audio_id, cues FROM turns WHERE id = ?", [req.params.id]);
+    const t = svc.db.get<{ raw_enc: string | null; text_enc: string; meta: string }>("SELECT raw_enc, text_enc, meta FROM entries WHERE id = ? AND kind = 'turn'", [req.params.id]);
     if (!t) return reply.code(404).send({ error: "No such turn" });
-    if (t.audio_id && svc.audio.load(t.audio_id)) return { audio_id: t.audio_id, cues: JSON.parse(t.cues ?? "[]") };
+    const meta = JSON.parse(t.meta) as { audio_id?: string | null; cues?: { target: string; at_ms: number }[] | null };
+    if (meta.audio_id && svc.audio.load(meta.audio_id)) return { audio_id: meta.audio_id, cues: meta.cues ?? [] };
     const raw = svc.cipher.decOpt(t.raw_enc) ?? svc.cipher.decOpt(t.text_enc) ?? "";
     const words = raw.replace(/<(show|update|propose|style_note)[\s\S]*?<\/\1>|<remove[^>]*\/>/g, "");
     const r = await svc.voice.renderAsync(words, { purpose: "replay", operational: false });

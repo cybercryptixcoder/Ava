@@ -56,23 +56,31 @@ export class ChatImportSource implements SourcePlugin {
     writeSourceState(this.svc, this.id, { ...st.state, jobs });
   }
 
-  /** Stage 1: parse, trim to his words, store as encrypted evidence. */
+  /** Stage 1: parse, trim to his words, store the words in the raw log. */
   ingest(file: Buffer, filename: string): ImportJob {
-    const { evidence, clock, log } = this.svc;
+    const { evidence, memory, clock, log } = this.svc;
     const { conversations, warnings } = parseChatExport(file, filename);
-    const purge = new Date(clock.now().getTime() + 30 * 86_400_000).toISOString();
     let kept = 0;
     for (const c of conversations) {
       const text = userTextOf(c);
       if (text.length < 60) continue;
+      // His words go into the raw log permanently; the evidence row keeps only
+      // what review and extraction need, pointing back at the entry.
+      const entryId = memory.append({
+        kind: "import",
+        source: this.id,
+        session_id: `${c.platform}:${c.id}`,
+        occurred_at: c.updated_at,
+        text,
+        meta: { title: c.title, platform: c.platform, created_at: c.created_at, updated_at: c.updated_at },
+      });
       evidence.add({
         kind: "conversation_import",
         source: this.id,
         source_ref: `${c.platform}:${c.id}`,
         occurred_at: c.updated_at,
         summary: c.title,
-        content: { title: c.title, platform: c.platform, created_at: c.created_at, updated_at: c.updated_at, text },
-        purge_after: purge,
+        content: { entry_id: entryId, title: c.title, platform: c.platform, updated_at: c.updated_at },
       });
       kept++;
     }
@@ -98,7 +106,7 @@ export class ChatImportSource implements SourcePlugin {
   async process(wakeId: string | null): Promise<string> {
     if (this.running) return "already running";
     this.running = true;
-    const { db, evidence, proposals, clock, log, settings } = this.svc;
+    const { db, evidence, memory, proposals, clock, log, settings } = this.svc;
     try {
       const pending = db.all<{ id: string }>("SELECT id FROM evidence WHERE source = ? AND distilled_at IS NULL ORDER BY occurred_at DESC", [this.id]);
       if (!pending.length) return "nothing to process";
@@ -113,9 +121,15 @@ export class ChatImportSource implements SourcePlugin {
           const e = evidence.get(pending[i].id);
           i++;
           if (!e) continue;
-          const c = e.content as { title: string; updated_at: string; text: string };
-          batch.push({ id: e.id, title: c.title, date: c.updated_at.slice(0, 10), text: c.text });
-          size += c.text.length;
+          const c = e.content as { title: string; updated_at: string; entry_id?: string };
+          const text = c.entry_id ? (memory.get(c.entry_id)?.text ?? "") : "";
+          if (!text) {
+            // Nothing to read (forgotten, or a pre-upgrade row with no copy): don't wedge the queue.
+            evidence.markDistilled(e.id);
+            continue;
+          }
+          batch.push({ id: e.id, title: c.title, date: c.updated_at.slice(0, 10), text });
+          size += text.length;
         }
         if (!batch.length) break;
         const text = batch.map((b) => `### ${b.title} (last active ${b.date})\n${b.text}`).join("\n\n");
@@ -171,6 +185,7 @@ export class ChatImportSource implements SourcePlugin {
   deleteData(): number {
     this.svc.db.run("DELETE FROM proposals WHERE origin = ? AND status = 'pending'", [this.id]);
     this.saveJobs([]);
+    this.svc.memory.forgetBySource(this.id, "you deleted the imported chat data");
     return this.svc.evidence.deleteBySource(this.id);
   }
 }

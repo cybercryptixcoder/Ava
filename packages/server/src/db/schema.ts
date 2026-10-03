@@ -447,4 +447,35 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE proposals ADD COLUMN auto INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE proposals ADD COLUMN undo TEXT;
   `,
+  /* 3: the raw log (L0), its links, and memory bookkeeping */ `
+  CREATE TABLE entries (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    role TEXT,
+    session_id TEXT,
+    occurred_at TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    text_enc TEXT NOT NULL,
+    raw_enc TEXT,
+    meta TEXT NOT NULL DEFAULT '{}',
+    deleted_at TEXT,
+    deleted_reason TEXT
+  );
+  CREATE INDEX entries_time ON entries(recorded_at);
+  CREATE INDEX entries_kind ON entries(kind, occurred_at);
+  CREATE INDEX entries_session ON entries(session_id, recorded_at);
+
+  CREATE TABLE entry_links (
+    entry_id TEXT NOT NULL,
+    rel TEXT NOT NULL,
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (entry_id, rel, target_kind, target_id)
+  );
+  CREATE INDEX entry_links_target ON entry_links(target_kind, target_id);
+
+  CREATE TABLE memory_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+  `,
 ];

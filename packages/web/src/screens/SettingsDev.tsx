@@ -23,6 +23,17 @@ interface PRun {
   label: string | null;
   results: { id: string; title: string; mode: string; input: string; reply: string; words: number; checks: { name: string; ok: boolean; detail: string }[]; audio_id: string | null; ms: number }[];
 }
+interface MemoryStatus {
+  entries: number;
+  by_kind: Record<string, number>;
+  backfill: {
+    phase: string;
+    copied: { turns: number; evidence: number; history: number };
+    skipped_purged: number;
+    errors: number;
+    finished_at: string | null;
+  };
+}
 
 const STAGE_LABEL: Record<string, string> = {
   eot_detect_ms: "End of speech to end of turn",
@@ -72,6 +83,7 @@ export function DevSection() {
   const { data: clk } = useApi<Clock>("/api/dev/clock");
   const { data: pstat } = useApi<{ stale: boolean; cases: number; voice_hash: string; last_run_hash: string | null }>("/api/personality/status");
   const { data: runs } = useApi<PRun[]>("/api/personality/runs");
+  const { data: mem } = useApi<MemoryStatus>("/api/memory/status");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ran, setRan] = useState<{ kind: string; due_at: string }[]>([]);
@@ -135,6 +147,29 @@ export function DevSection() {
             </Button>
           ))}
         </div>
+      </section>
+
+      <section className="band" aria-label="Memory">
+        <h3 className="section-title">Memory</h3>
+        {mem ? (
+          <>
+            <p className="band-note">
+              Raw log: <span className="num">{mem.entries}</span> entries.{" "}
+              {mem.backfill.phase === "done"
+                ? mem.backfill.copied.turns + mem.backfill.copied.evidence + mem.backfill.copied.history === 0
+                  ? "Nothing older needed importing; the log starts from now."
+                  : `Everything older was imported (${mem.backfill.copied.turns} turns, ${mem.backfill.copied.evidence} sourced records, ${mem.backfill.copied.history} item events${mem.backfill.skipped_purged ? `; ${mem.backfill.skipped_purged} records were purged before the log existed and can't be recovered` : ""}).`
+                : `Still importing older data (${mem.backfill.phase}, ${mem.backfill.copied.turns + mem.backfill.copied.evidence + mem.backfill.copied.history} copied so far).`}
+            </p>
+            {mem.backfill.phase !== "done" ? (
+              <div className="row-actions">
+                <Button size="sm" kind="quiet" busy={busy === "backfill"} onClick={() => void act("backfill", () => api.post("/api/memory/backfill", {}))}>
+                  Finish the import now
+                </Button>
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </section>
 
       <section className="band" aria-label="Model usage">

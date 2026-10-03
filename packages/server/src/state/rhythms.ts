@@ -27,7 +27,7 @@ export class Rhythms {
   private interactions(fromIso: string): Date[] {
     const { db } = this.svc;
     const rows = [
-      ...db.all<{ at: string }>("SELECT created_at AS at FROM turns WHERE role = 'user' AND created_at >= ?", [fromIso]),
+      ...db.all<{ at: string }>("SELECT recorded_at AS at FROM entries WHERE kind = 'turn' AND role = 'user' AND recorded_at >= ?", [fromIso]),
       ...db.all<{ at: string }>("SELECT responded_at AS at FROM messages WHERE responded_at >= ?", [fromIso]),
       ...db.all<{ at: string }>("SELECT at FROM item_history WHERE via NOT IN ('gcal','ics','system') AND at >= ?", [fromIso]),
     ];
