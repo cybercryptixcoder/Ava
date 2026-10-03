@@ -131,6 +131,8 @@ export interface TurnView {
   audio_id: string | null;
   cues: { target: string; at_ms: number }[] | null;
   trimmed_affirmation: boolean;
+  /** The refs of the context pack this reply drew on, when there was one. */
+  memory_used: string[] | null;
 }
 
 export interface CanvasState {
@@ -316,4 +318,93 @@ export interface CalendarView {
   tz: string;
   now: string;
   days: CalendarDayView[];
+}
+
+// ---------------------------------------------------------------------------
+// The memory back room
+// ---------------------------------------------------------------------------
+
+/** One raw entry, as the memory screen browses it (preview text only). */
+export interface MemoryEntryListRow {
+  id: string;
+  kind: string;
+  source: string;
+  role: string | null;
+  at: string;
+  recorded_at: string;
+  text: string;
+  deleted: boolean;
+  deleted_reason: string | null;
+}
+
+/** One raw entry, opened. */
+export interface MemoryEntryView extends MemoryEntryListRow {
+  meta: Record<string, unknown>;
+  links: { rel: string; target_kind: string; target_id: string }[];
+  episodes: string[];
+}
+
+export interface MemoryEpisodeListRow {
+  id: string;
+  at: string;
+  end: string;
+  source: string;
+  session_id: string | null;
+  gist: string;
+  importance: number;
+  stale: boolean;
+  version: number;
+  entries: number;
+}
+
+export interface MemoryEpisodeView {
+  id: string;
+  at: string;
+  end: string;
+  source: string;
+  session_id: string | null;
+  gist: string;
+  importance: number;
+  stale: boolean;
+  version: number;
+  entries: { id: string; at: string; role: string | null; kind: string; deleted: boolean; preview: string }[];
+}
+
+export interface MemoryFactListRow {
+  id: string;
+  statement: string;
+  /** current | superseded; removed rows are not listed. */
+  status: string;
+  provenance: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  superseded_by: string | null;
+  canonical_id: string | null;
+  importance: number;
+  recorded_at: string;
+  sources: number;
+}
+
+export interface MemoryFactView extends MemoryFactListRow {
+  /** The full validity chain through this fact's supersessions, oldest first. */
+  chain: { id: string; statement: string; status: string; valid_from: string | null; valid_to: string | null }[];
+  source_entries: { id: string; at: string; preview: string; deleted: boolean }[];
+}
+
+export interface MemoryCoreView {
+  latest: { version: number; text: string; created_at: string } | null;
+  versions: { version: number; tokens: number; created_at: string }[];
+}
+
+export interface MemoryConsolidationView {
+  last: { at: string; summary: string } | null;
+  recent: { at: string; kind: string; summary: string }[];
+}
+
+/** Exactly what a forget would remove or rebuild — shown before anything happens. */
+export interface MemoryForgetClosure {
+  entries: { id: string; kind: string; at: string; preview: string }[];
+  facts: { id: string; statement: string }[];
+  episodes_stale: { id: string; gist: string }[];
+  episodes_removed: { id: string; gist: string }[];
 }

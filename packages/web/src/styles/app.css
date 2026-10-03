@@ -4002,3 +4002,38 @@ pre.code {
     background: #fff;
   }
 }
+
+/* ------------------------------------------------------------ the memory back room */
+.memory .mem-band { color: var(--ink-3); font-size: 0.9rem; margin: 0 0 14px; }
+.memory .mem-band strong { color: var(--ink); }
+.mem-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.mem-search { display: flex; gap: 8px; align-items: center; flex: 1 1 280px; }
+.mem-search input { flex: 1 1 200px; min-width: 0; }
+.mem-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mem-row { display: flex; gap: 10px; align-items: baseline; padding: 8px 2px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+.mem-row[data-deleted] { opacity: 0.55; }
+.mem-day { flex-basis: 100%; color: var(--ink-3); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; padding-top: 12px; }
+.mem-chip { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); background: var(--sunken); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.mem-time { color: var(--ink-3); font-size: 0.8rem; white-space: nowrap; }
+.mem-row-text { flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.mem-row-text:hover { color: var(--steel); }
+.mem-row[data-deleted] .mem-row-text { text-decoration: line-through; }
+.mem-link { background: none; border: 0; padding: 0 2px; color: var(--steel); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font: inherit; }
+.mem-note { color: var(--ink-3); font-size: 0.85rem; margin: 6px 0; }
+.mem-badge { margin-left: 8px; font-size: 0.78rem; color: var(--signal); }
+.mem-full { white-space: pre-wrap; background: var(--sunken); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+.mem-full.core { max-height: 340px; overflow: auto; }
+.mem-gist { font-size: 1rem; line-height: 1.5; }
+.mem-kv { color: var(--ink-2); font-size: 0.9rem; }
+.mem-kv .label { margin-right: 4px; }
+.mem-core h2 { margin-top: 18px; }
+.fact-chain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fact-chain li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 0.92rem; }
+.fact-chain li[data-status="superseded"] { color: var(--ink-3); }
+.forget-warn { background: var(--signal-tint); border: 1px solid var(--signal); border-radius: 8px; padding: 10px 12px; font-size: 0.92rem; line-height: 1.5; }
+.forget-derived, .forget-entries { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 0.9rem; }
+.forget-derived li, .forget-entries li { overflow-wrap: anywhere; }
+.forget-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.forget-done { font-weight: 600; }
+.turn-memory { justify-self: start; font: inherit; font-size: var(--t-label); color: var(--steel); background: none; border: 0; padding: 2px 0; text-decoration: underline; text-decoration-color: var(--steel-line); text-underline-offset: 3px; cursor: pointer; }
+.turn-memory:hover { color: var(--ink); }

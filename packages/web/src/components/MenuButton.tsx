@@ -51,6 +51,12 @@ export function MenuButton({ label = "Menu" }: { label?: string }) {
               </Link>
             </li>
             <li>
+              <Link className="menu-link" to="/memory">
+                Memory
+              </Link>
+              <span className="menu-note">Raw log, gists, facts and forgetting</span>
+            </li>
+            <li>
               <Link className="menu-link" to="/messages">
                 Messages
               </Link>

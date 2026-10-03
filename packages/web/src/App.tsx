@@ -17,6 +17,7 @@ import { Messages } from "./screens/Messages";
 import { Log } from "./screens/Log";
 import { Settings } from "./screens/Settings";
 import { FirstRun } from "./screens/FirstRun";
+import { Memory } from "./screens/Memory";
 
 interface Me {
   authenticated: boolean;
@@ -68,6 +69,7 @@ function Frame({ me }: { me: Me }) {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="/knows" element={<Knows />} />
+          <Route path="/memory" element={<Memory />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/log" element={<Log />} />
           <Route path="/settings" element={<Settings />} />
