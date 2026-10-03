@@ -42,6 +42,7 @@ const STAGE_LABEL: Record<string, string> = {
   eot_detect_ms: "End of speech to end of turn",
   grace_hold_ms: "Held for an unfinished thought",
   tts_connect_ms: "Voice connection",
+  retrieval_ms: "Memory retrieval",
   llm_ttft_ms: "Model first token",
   first_sentence_ms: "First sentence ready",
   tts_first_audio_ms: "First audio from voice",

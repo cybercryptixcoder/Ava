@@ -127,6 +127,8 @@ export const SettingsSchema = z.object({
     embeddings: z.object({ provider: z.enum(["auto", "local", "hosted", "lexical"]) }),
     /** Size of the retrieval pack the planner pulls for its own query. */
     planner_budget_tokens: z.number().min(500).max(8000),
+    /** Live mode: how long a reply waits for the speculatively started retrieval before using core + window. */
+    live_grace_ms: z.number().int().min(0).max(2000),
     /** The nightly consolidation wake: the only place derived layers get revised. */
     consolidation: z.object({
       enabled: z.boolean(),
@@ -226,6 +228,7 @@ export function defaultSettings(envDefaults: {
       ranking: { relevance: 1, recency: 0.35, importance: 0.25, semantic: 0.5, half_life_days: 30 },
       embeddings: { provider: "auto" },
       planner_budget_tokens: 2500,
+      live_grace_ms: 250,
       consolidation: { enabled: true, at_local: "03:00", max_calls: 30 },
       fast_path: true,
       retriever: { mode: "agent", max_rounds: 4 },
