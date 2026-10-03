@@ -95,11 +95,6 @@ export function parseTimeRange(query: string, now: Date, tz: string): { since?: 
 
 const HISTORY = /\b(before|used to|previously|was |were |changed|moved|earlier|originally|history)\b/i;
 
-interface Scored {
-  hit: Hit;
-  final: number;
-}
-
 /** The retriever itself, plus the direct composition it falls back to. */
 export class Retriever {
   constructor(private svc: Services) {}
@@ -118,28 +113,68 @@ export class Retriever {
         this.svc.log.warn("memory.retrieve", `The retriever agent fell back to the direct pass: ${(e as Error).message}`);
       }
     }
-    return this.direct(query, range, budget);
+    return await this.direct(query, range, budget);
   }
 
-  /** Deterministic candidate ranking: weighted relevance, recency decay, importance. */
-  private ranked(query: string, range: { since?: string; until?: string }): Scored[] {
+  /**
+   * Candidates for the pack: keyword hits merged with semantic neighbors.
+   * Relevance is keyword score (normalized) plus semantic similarity, then
+   * weighted with recency and importance per the memory.ranking settings.
+   */
+  private async candidates(query: string, range: { since?: string; until?: string }): Promise<{ hit: Hit; final: number }[]> {
     const s = this.svc.settings.get().memory;
-    const hits = this.svc.memorySearch.search(query, { since: range.since, until: range.until, limit: 60 });
+    const kws = this.svc.memorySearch.search(query, { since: range.since, until: range.until, limit: 60 });
+    const max = kws.reduce((m, h) => Math.max(m, h.score), 0) || 1;
+    const byKey = new Map<string, { hit: Hit; kwNorm: number; cos: number }>();
+    for (const h of kws) byKey.set(`${h.ref_kind}:${h.ref_id}`, { hit: h, kwNorm: h.score / max, cos: 0 });
+    try {
+      for (const near of await this.svc.embeddings.nearest(query)) {
+        const key = `${near.ref_kind}:${near.ref_id}`;
+        const cur = byKey.get(key);
+        if (cur) {
+          cur.cos = near.cos;
+          continue;
+        }
+        const meta = this.refMeta(near.ref_kind, near.ref_id);
+        if (!meta) continue; // forgotten or gone
+        if (range.since && meta.at < range.since) continue;
+        if (range.until && meta.at >= range.until) continue;
+        byKey.set(key, { hit: { ref_kind: near.ref_kind, ref_id: near.ref_id, score: 0, at: meta.at, importance: meta.importance }, kwNorm: 0, cos: near.cos });
+      }
+    } catch (e) {
+      this.svc.log.warn("memory.retrieve", `Semantic neighbors skipped: ${(e as Error).message}`);
+    }
+    const wSem = s.ranking.semantic;
     const now = this.svc.clock.now().getTime();
-    const max = hits.reduce((m, h) => Math.max(m, h.score), 0) || 1;
-    return hits
-      .map((hit) => {
-        const ageDays = Math.max(0, (now - Date.parse(hit.at)) / 86_400_000);
+    return [...byKey.values()]
+      .map((c) => {
+        const relevance = (c.kwNorm + wSem * c.cos) / (1 + wSem);
+        const ageDays = Math.max(0, (now - Date.parse(c.hit.at)) / 86_400_000);
         const recency = Math.exp(-ageDays / s.ranking.half_life_days);
-        const final = s.ranking.relevance * (hit.score / max) + s.ranking.recency * recency + s.ranking.importance * hit.importance;
-        return { hit, final };
+        const final = s.ranking.relevance * relevance + s.ranking.recency * recency + s.ranking.importance * c.hit.importance;
+        return { hit: c.hit, final };
       })
       .sort((a, b) => b.final - a.final);
   }
 
+  /** When and how important a ref is, for semantic-only candidates. */
+  private refMeta(kind: RefKind, id: string): { at: string; importance: number } | null {
+    const { db } = this.svc;
+    if (kind === "entry") {
+      const r = db.get<{ occurred_at: string; deleted_at: string | null }>("SELECT occurred_at, deleted_at FROM entries WHERE id = ?", [id]);
+      return r && !r.deleted_at ? { at: r.occurred_at, importance: 0.5 } : null;
+    }
+    if (kind === "episode") {
+      const r = db.get<{ start_at: string; importance: number }>("SELECT start_at, importance FROM episodes WHERE id = ?", [id]);
+      return r ? { at: r.start_at, importance: Number(r.importance) } : null;
+    }
+    const r = db.get<{ recorded_at: string; importance: number }>("SELECT recorded_at, importance FROM facts WHERE id = ? AND status != 'removed'", [id]);
+    return r ? { at: r.recorded_at, importance: Number(r.importance) } : null;
+  }
+
   /** The direct pass: compose the pack from ranked candidates without a model. */
-  direct(query: string, range: { since?: string; until?: string }, budget: number): ContextPack {
-    const ranked = this.ranked(query, range);
+  async direct(query: string, range: { since?: string; until?: string }, budget: number): Promise<ContextPack> {
+    const ranked = await this.candidates(query, range);
     const gists: PackGist[] = [];
     const facts: PackFact[] = [];
     const excerpts: PackExcerpt[] = [];
@@ -225,13 +260,9 @@ export class Retriever {
       });
       const step = r?.parsed;
       if (!step) throw new Error(r?.parseError ?? "The retriever agent returned nothing");
-      if (step.done) {
-        const pack = this.compose(step.selected, budget);
-        if (pack.empty && step.note && !/nothing/i.test(step.note)) return pack;
-        return pack.empty && !this.ranked(query, range).length ? { ...pack, empty: true } : pack;
-      }
+      if (step.done) return this.compose(step.selected, budget);
       let result: unknown = { error: "no tool call" };
-      if (step.tool === "search") result = this.toolSearch(step.query ?? query, range);
+      if (step.tool === "search") result = await this.toolSearch(step.query ?? query, range);
       else if (step.tool === "read" && step.ref_id) result = this.toolRead(step.ref_id);
       else if (step.tool === "expand" && step.ref_id) result = this.toolExpand(step.ref_id);
       messages.push({ role: "assistant", content: JSON.stringify(step) });
@@ -240,12 +271,10 @@ export class Retriever {
     return null; // rounds exhausted: the direct pass takes over
   }
 
-  private toolSearch(query: string, range: { since?: string; until?: string }):
-    | { hits: { ref: string; kind: string; at: string; preview: string }[] }
-    | { error: string } {
-    const hits = this.svc.memorySearch.search(query, { since: range.since, until: range.until, limit: 10 });
+  private async toolSearch(query: string, range: { since?: string; until?: string }): Promise<{ hits: { ref: string; kind: string; at: string; preview: string }[] }> {
+    const cands = await this.candidates(query, range);
     return {
-      hits: hits.map((h) => ({ ref: h.ref_id, kind: h.ref_kind, at: h.at.slice(0, 10), preview: this.preview(h).slice(0, 160) })),
+      hits: cands.slice(0, 10).map((c) => ({ ref: c.hit.ref_id, kind: c.hit.ref_kind, at: c.hit.at.slice(0, 10), preview: this.preview(c.hit).slice(0, 160) })),
     };
   }
 

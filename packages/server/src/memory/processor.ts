@@ -198,9 +198,17 @@ export class MemoryProcessor {
     const gist = await this.gistFor(batch);
     const facts = await this.factsFor(batch);
     const episodeId = this.saveEpisode(batch, gist);
-    const nFacts = this.saveFacts(batch, facts, episodeId);
+    const factIds = this.saveFacts(batch, facts, episodeId);
     this.svc.memorySearch.indexEpisode(episodeId);
-    return { episodes: 1, facts: nFacts };
+    // Vectors for the semantic half of hybrid search; failures never block the raw pipeline.
+    try {
+      await this.svc.embeddings.ensure("entry", batch.map((e) => e.id));
+      await this.svc.embeddings.ensure("episode", [episodeId]);
+      await this.svc.embeddings.ensure("fact", factIds);
+    } catch (e) {
+      this.svc.log.warn("memory.embed", `Embeddings skipped for this batch: ${(e as Error).message}`);
+    }
+    return { episodes: 1, facts: factIds.length };
   }
 
   private async gistFor(batch: RawEntry[]): Promise<z.infer<typeof GistSchema>> {
@@ -286,10 +294,10 @@ export class MemoryProcessor {
   }
 
   /** Add-only: new fact rows with their source links. Nothing existing is touched. */
-  private saveFacts(batch: RawEntry[], facts: z.infer<typeof FactsSchema>["facts"], episodeId: string): number {
+  private saveFacts(batch: RawEntry[], facts: z.infer<typeof FactsSchema>["facts"], episodeId: string): string[] {
     const { db, cipher, clock, log } = this.svc;
     const now = clock.now().toISOString();
-    let n = 0;
+    const ids: string[] = [];
     for (const f of facts) {
       const id = newId("fct");
       const sources = f.entry_ids.length ? f.entry_ids : batch.filter((e) => e.role !== "ava").map((e) => e.id);
@@ -299,9 +307,9 @@ export class MemoryProcessor {
       );
       for (const entryId of sources) db.run("INSERT OR IGNORE INTO fact_entries (fact_id, entry_id) VALUES (?, ?)", [id, entryId]);
       this.svc.memorySearch.indexFact(id);
-      n += 1;
+      ids.push(id);
     }
-    if (n) log.info("memory.facts", `Extracted ${n} ${n === 1 ? "fact" : "facts"} from ${batch.length} raw ${batch.length === 1 ? "entry" : "entries"}`, { episode_id: episodeId, facts: n });
-    return n;
+    if (ids.length) log.info("memory.facts", `Extracted ${ids.length} ${ids.length === 1 ? "fact" : "facts"} from ${batch.length} raw ${batch.length === 1 ? "entry" : "entries"}`, { episode_id: episodeId, facts: ids.length });
+    return ids;
   }
 }

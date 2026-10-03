@@ -15,6 +15,7 @@ import { Backfill } from "./memory/backfill";
 import { MemoryProcessor } from "./memory/processor";
 import { MemorySearch } from "./memory/search";
 import { Retriever } from "./memory/retriever";
+import { Embeddings } from "./memory/embeddings";
 import { BeliefStore } from "./state/beliefs";
 import { ProposalStore } from "./state/proposals";
 import { QuestionStore } from "./state/questions";
@@ -119,11 +120,15 @@ export function buildApp(opts: BuildOptions = {}): App {
   svc.memoryProcessor = new MemoryProcessor(svc);
   svc.memorySearch = new MemorySearch(svc);
   svc.retriever = new Retriever(svc);
+  svc.embeddings = new Embeddings(svc);
   // The derived layers watch the log: every append schedules processing.
   svc.memory.onAppend(() => svc.memoryProcessor.notify());
   svc.memory.onAppend((e) => svc.memorySearch.indexEntry(e));
   svc.memory.onForget((ids) => {
-    for (const id of ids) svc.memorySearch.removeRef("entry", id);
+    for (const id of ids) {
+      svc.memorySearch.removeRef("entry", id);
+      svc.embeddings.remove("entry", id);
+    }
   });
 
   // Default voices from env if not chosen yet.
