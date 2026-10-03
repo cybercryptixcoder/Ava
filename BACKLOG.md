@@ -39,9 +39,3 @@ For each: tokens only (`packages/web/src/styles/tokens.css`), no internal names 
 - Calendar (`packages/web/src/screens/Calendar.tsx`): the day and week views should read cleanly at a glance. His calendar plus Ava's planned check-ins, nothing else. Check long titles, overlapping events, all-day events and a day with nothing on it.
 - Everything (`packages/web/src/screens/Everything.tsx`): threads, then items, then subtasks, collapsed by default. Check keyboard navigation (arrow keys and Enter on the tree), long titles, and a thread with many items.
 - Screenshots in the PR. One PR per view if the diff grows past about 400 lines.
-
-## 5. No horizontal overflow at 320 px
-
-- Add a Playwright test (`packages/web/e2e/`) that opens every screen, including the menu screens and an opened card layer, at 320 px wide and asserts `document.documentElement.scrollWidth <= window.innerWidth`.
-- Fix any screen that fails, in the same PR if the fixes are small, otherwise one follow-up PR per screen.
-- Done when the test runs in CI and passes.

@@ -97,6 +97,7 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --t-fast: 120ms;
   --t-move: 220ms;
+  --t-hint: 900ms;
 }
 
 @media (min-width: 720px) {
@@ -110,5 +111,6 @@
   :root {
     --t-fast: 0ms;
     --t-move: 0ms;
+    --t-hint: 0ms;
   }
 }

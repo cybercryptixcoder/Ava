@@ -898,199 +898,6 @@ input.num {
   color: var(--ink-2);
 }
 
-/* ---------- Today ---------- */
-
-.today-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--s2) var(--s5);
-  padding-bottom: var(--s4);
-  margin-bottom: var(--s4);
-  border-bottom: 1px solid var(--rule);
-}
-
-.today-time {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--s2) var(--s4);
-}
-
-.dial-time {
-  font-size: var(--t-dial);
-  line-height: 1;
-  font-weight: 300;
-  font-stretch: 118%;
-  letter-spacing: -0.01em;
-}
-
-.today-date {
-  font-size: 16px;
-  color: var(--ink-2);
-}
-
-.today-next {
-  font-size: 14.5px;
-  color: var(--ink-2);
-}
-
-.today-next .steel {
-  font-weight: 600;
-}
-
-.today-plan {
-  max-width: 62ch;
-  color: var(--ink-2);
-}
-
-.today-grid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s5);
-}
-
-.today-waiting {
-  order: -1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  min-width: 0;
-}
-
-.waiting-more {
-  align-self: flex-start;
-}
-
-.today-waiting > .section-title {
-  padding-bottom: var(--s2);
-}
-
-.dial-legend {
-  display: flex;
-  gap: var(--s4);
-  margin-bottom: var(--s2);
-  padding-left: 44px;
-  font-size: var(--t-label);
-  color: var(--ink-2);
-}
-
-.legend-his::before,
-.legend-ava::before {
-  content: "";
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
-  vertical-align: -1px;
-}
-
-.legend-his::before {
-  background: var(--event);
-  box-shadow: inset 2px 0 0 var(--ink-2);
-}
-
-.legend-ava::before {
-  background: var(--steel-tint);
-  box-shadow: inset 2px 0 0 var(--steel);
-}
-
-@media (min-width: 1024px) {
-  .today-head {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: end;
-  }
-  .today-phone-loc {
-    display: none;
-  }
-  .today-next {
-    grid-column: 1 / -1;
-  }
-  .today-plan {
-    grid-column: 1 / -1;
-  }
-  .today-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
-    align-items: start;
-    gap: var(--s6);
-  }
-  .today-waiting {
-    order: 0;
-    position: sticky;
-    top: var(--s4);
-    max-height: calc(100vh - 32px);
-    overflow-y: auto;
-    padding-right: 2px;
-  }
-}
-
-.brief {
-  border-top: 2px solid var(--ink);
-  padding-top: var(--s3);
-}
-
-.brief-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s3);
-  margin-bottom: var(--s2);
-}
-
-.brief-text {
-  font-size: 18px;
-}
-
-.brief-queued {
-  margin-top: var(--s4);
-}
-
-.brief-queued > .label {
-  display: block;
-  margin-bottom: var(--s1);
-}
-
-.question {
-  border-left: 2px solid var(--steel);
-  padding: var(--s1) 0 var(--s1) var(--s3);
-}
-
-.question-text {
-  font-size: 18px;
-}
-
-.question-why {
-  margin: 4px 0 var(--s2);
-  font-size: var(--t-meta);
-  color: var(--ink-3);
-}
-
-.question textarea {
-  width: 100%;
-}
-
-.pending-send {
-  border-top: 1px solid var(--rule);
-  padding-top: var(--s3);
-  font-size: 14.5px;
-}
-
-.pending-send .btn {
-  margin-top: var(--s2);
-}
-
-.waiting-chips,
-.waiting-rule {
-  border-top: 1px solid var(--rule);
-  padding-top: var(--s3);
-}
-
-.waiting-chips > .label,
-.waiting-rule > .label {
-  display: block;
-  margin-bottom: var(--s1);
-}
-
 /* ---------- The day dial ---------- */
 
 .dial-scale {
@@ -3412,6 +3219,36 @@ pre.code {
 
 .stack-hint-right {
   right: var(--s4);
+}
+
+/* The one-time swipe hint under the deck: touch devices, until the first swipes. */
+.swipe-hint {
+  font-size: var(--t-label);
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* A gentle, one-time nudge so a first-time phone owner learns the swipe. */
+@keyframes swipe-nudge {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateX(-7px);
+  }
+  55% {
+    transform: translateX(7px);
+  }
+  80% {
+    transform: translateX(-3px);
+  }
+}
+
+.stack[data-nudge="true"] .stack-front {
+  animation:
+    stack-settle var(--t-move) var(--ease),
+    swipe-nudge var(--t-hint) var(--ease) 0.2s 1;
 }
 
 /* The card, layer 1. */
