@@ -17,6 +17,8 @@ import { MemorySearch } from "./memory/search";
 import { Retriever } from "./memory/retriever";
 import { Embeddings } from "./memory/embeddings";
 import { Core } from "./memory/core";
+import { Contradictor } from "./memory/contradict";
+import { Consolidation } from "./memory/consolidate";
 import { BeliefStore } from "./state/beliefs";
 import { ProposalStore } from "./state/proposals";
 import { QuestionStore } from "./state/questions";
@@ -123,6 +125,8 @@ export function buildApp(opts: BuildOptions = {}): App {
   svc.retriever = new Retriever(svc);
   svc.embeddings = new Embeddings(svc);
   svc.core = new Core(svc);
+  svc.contradict = new Contradictor(svc);
+  svc.consolidation = new Consolidation(svc);
   // The derived layers watch the log: every append schedules processing.
   svc.memory.onAppend(() => svc.memoryProcessor.notify());
   svc.memory.onAppend((e) => svc.memorySearch.indexEntry(e));
@@ -131,6 +135,8 @@ export function buildApp(opts: BuildOptions = {}): App {
       svc.memorySearch.removeRef("entry", id);
       svc.embeddings.remove("entry", id);
     }
+    // Derived layers follow the raw content out (facts with no sources left, stale gists).
+    svc.memoryProcessor.syncDerivedAfterForget(ids);
   });
 
   // Default voices from env if not chosen yet.

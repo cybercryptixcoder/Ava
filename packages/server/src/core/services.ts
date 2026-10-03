@@ -14,6 +14,8 @@ import type { MemorySearch } from "../memory/search";
 import type { Retriever } from "../memory/retriever";
 import type { Embeddings } from "../memory/embeddings";
 import type { Core } from "../memory/core";
+import type { Contradictor } from "../memory/contradict";
+import type { Consolidation } from "../memory/consolidate";
 import type { BeliefStore } from "../state/beliefs";
 import type { ProposalStore } from "../state/proposals";
 import type { QuestionStore } from "../state/questions";
@@ -67,6 +69,10 @@ export interface Services {
   embeddings: Embeddings;
   /** L3: the versioned core, the stable block at the top of every conversation prompt. */
   core: Core;
+  /** L2's guard: supersedes genuine contradictions, add-only otherwise. */
+  contradict: Contradictor;
+  /** The nightly consolidation wake: the only place derived layers get revised. */
+  consolidation: Consolidation;
   beliefs: BeliefStore;
   proposals: ProposalStore;
   threads: ThreadStore;

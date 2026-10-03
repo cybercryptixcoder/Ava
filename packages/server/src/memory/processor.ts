@@ -200,6 +200,12 @@ export class MemoryProcessor {
     const episodeId = this.saveEpisode(batch, gist);
     const factIds = this.saveFacts(batch, facts, episodeId);
     this.svc.memorySearch.indexEpisode(episodeId);
+    // L2's guard: a cheap judge supersedes genuine contradictions (add-only otherwise).
+    try {
+      if (factIds.length) await this.svc.contradict.review(factIds);
+    } catch (e) {
+      this.svc.log.warn("memory.contradict", `Contradiction review skipped: ${(e as Error).message}`);
+    }
     // Vectors for the semantic half of hybrid search; failures never block the raw pipeline.
     try {
       await this.svc.embeddings.ensure("entry", batch.map((e) => e.id));
@@ -302,8 +308,8 @@ export class MemoryProcessor {
       const id = newId("fct");
       const sources = f.entry_ids.length ? f.entry_ids : batch.filter((e) => e.role !== "ava").map((e) => e.id);
       db.run(
-        "INSERT INTO facts (id, statement_enc, keywords_enc, entities_enc, refers_at, recorded_at, provenance, confidence, importance, source, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'current', ?)",
-        [id, cipher.encrypt(f.statement), cipher.encJson(f.keywords), cipher.encJson(f.entities), f.refers_at, now, f.provenance, f.confidence, f.importance, batch[0].source, now],
+        "INSERT INTO facts (id, statement_enc, keywords_enc, entities_enc, refers_at, recorded_at, valid_from, provenance, confidence, importance, source, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'current', ?)",
+        [id, cipher.encrypt(f.statement), cipher.encJson(f.keywords), cipher.encJson(f.entities), f.refers_at, now, now, f.provenance, f.confidence, f.importance, batch[0].source, now],
       );
       for (const entryId of sources) db.run("INSERT OR IGNORE INTO fact_entries (fact_id, entry_id) VALUES (?, ?)", [id, entryId]);
       this.svc.memorySearch.indexFact(id);
@@ -311,5 +317,67 @@ export class MemoryProcessor {
     }
     if (ids.length) log.info("memory.facts", `Extracted ${ids.length} ${ids.length === 1 ? "fact" : "facts"} from ${batch.length} raw ${batch.length === 1 ? "entry" : "entries"}`, { episode_id: episodeId, facts: ids.length });
     return ids;
+  }
+
+  /**
+   * The derived layers follow forgotten raw entries out: covering episodes are
+   * marked stale (their gists get regenerated from the remaining raw), and a
+   * fact that loses its last raw source is removed. Called from the forget
+   * watcher; the forget flow previews exactly this closure before deleting.
+   */
+  syncDerivedAfterForget(entryIds: string[]): void {
+    const { db } = this.svc;
+    for (const id of entryIds) {
+      db.run("UPDATE episodes SET stale = 1 WHERE id IN (SELECT episode_id FROM episode_entries WHERE entry_id = ?)", [id]);
+      for (const f of db.all<{ id: string }>("SELECT DISTINCT fact_id AS id FROM fact_entries WHERE entry_id = ?", [id])) {
+        const remaining = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM fact_entries fe JOIN entries e ON e.id = fe.entry_id WHERE fe.fact_id = ? AND e.deleted_at IS NULL", [f.id])?.n ?? 0;
+        if (remaining === 0) {
+          db.run("UPDATE facts SET status = 'removed' WHERE id = ?", [f.id]);
+          this.svc.memorySearch.removeRef("fact", f.id);
+          this.svc.embeddings.remove("fact", f.id);
+        }
+      }
+    }
+  }
+
+  /**
+   * Regenerate one episode's gist from its raw entries (forgotten entries
+   * excluded). An episode that lost all its raw content is removed with it.
+   * Only consolidation calls this.
+   */
+  async regenerateGist(episodeId: string): Promise<"revised" | "removed" | "skipped"> {
+    const { db, cipher, clock, log } = this.svc;
+    const entries = this.svc.memory
+      .episodeEntries(episodeId)
+      .map((id) => this.svc.memory.get(id))
+      .filter((e): e is NonNullable<typeof e> => !!e && !e.deleted_at && !!e.text.trim());
+    if (!entries.length) {
+      db.run("DELETE FROM entry_links WHERE target_kind = 'episode' AND target_id = ?", [episodeId]);
+      db.run("DELETE FROM episode_entries WHERE episode_id = ?", [episodeId]);
+      db.run("DELETE FROM episodes WHERE id = ?", [episodeId]);
+      this.svc.memorySearch.removeRef("episode", episodeId);
+      this.svc.embeddings.remove("episode", episodeId);
+      log.info("memory.gist", "Removed an episode whose raw entries were all forgotten", { episode_id: episodeId });
+      return "removed";
+    }
+    const gist = await this.gistFor(entries);
+    const now = clock.now().toISOString();
+    db.run("UPDATE episodes SET gist_enc = ?, keywords_enc = ?, entities_enc = ?, importance = ?, stale = 0, version = version + 1, revised_at = ? WHERE id = ?", [
+      cipher.encrypt(gist.gist),
+      cipher.encJson(gist.keywords),
+      cipher.encJson(gist.entities),
+      gist.importance,
+      now,
+      episodeId,
+    ]);
+    this.svc.memorySearch.indexEpisode(episodeId);
+    this.svc.embeddings.remove("episode", episodeId);
+    try {
+      await this.svc.embeddings.ensure("episode", [episodeId]);
+    } catch (e) {
+      log.warn("memory.embed", `Re-embed skipped: ${(e as Error).message}`);
+    }
+    log.info("memory.gist", `Regenerated an episode's gist from raw (v${Number(db.get<{ version: number }>("SELECT version FROM episodes WHERE id = ?", [episodeId])?.version ?? 0)}): "${gist.gist.slice(0, 120)}"`, { episode_id: episodeId });
+    return "revised";
   }
 }

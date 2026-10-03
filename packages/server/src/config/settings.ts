@@ -127,6 +127,13 @@ export const SettingsSchema = z.object({
     embeddings: z.object({ provider: z.enum(["auto", "local", "hosted", "lexical"]) }),
     /** Size of the retrieval pack the planner pulls for its own query. */
     planner_budget_tokens: z.number().min(500).max(8000),
+    /** The nightly consolidation wake: the only place derived layers get revised. */
+    consolidation: z.object({
+      enabled: z.boolean(),
+      at_local: z.string().regex(/^\d{2}:\d{2}$/),
+      /** Model-call budget for one consolidation run. */
+      max_calls: z.number().int().min(5).max(100),
+    }),
     /** Skip retrieval entirely for messages that clearly need no memory. */
     fast_path: z.boolean(),
     /** The retriever runs as a cheap-model sub-agent; "direct" skips the agent. */
@@ -219,6 +226,7 @@ export function defaultSettings(envDefaults: {
       ranking: { relevance: 1, recency: 0.35, importance: 0.25, semantic: 0.5, half_life_days: 30 },
       embeddings: { provider: "auto" },
       planner_budget_tokens: 2500,
+      consolidation: { enabled: true, at_local: "03:00", max_calls: 30 },
       fast_path: true,
       retriever: { mode: "agent", max_rounds: 4 },
     },
