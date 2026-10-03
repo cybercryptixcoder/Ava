@@ -3299,20 +3299,11 @@ pre.code {
   text-align: center;
 }
 
-.stack-more {
-  font-size: var(--t-label);
-  color: var(--ink-3);
-}
-
 /* The stack: one card in full, the next one or two as empty edges behind it. */
 .stack {
   position: relative;
   width: min(var(--card-w), 100%);
   height: clamp(290px, 44vh, 410px);
-}
-
-.stack-empty {
-  height: 0;
 }
 
 .stack-peek {

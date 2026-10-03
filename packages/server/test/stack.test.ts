@@ -13,6 +13,10 @@ async function wakeNow(t: TestApp, reason = "check") {
 
 const pushes = (t: TestApp) => t.svc.log.list({ kind: "push.simulated" }).length;
 
+/** Active cards that are due right now — the deck the owner would actually see. */
+const activeDue = (t: TestApp) =>
+  t.svc.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM cards WHERE status = 'active' AND visible_from <= ?", [t.clock.now().toISOString()])!.n;
+
 describe("threads", () => {
   it("files every task, commitment and project under a thread", () => {
     t = makeApp();
@@ -103,7 +107,48 @@ describe("the stack", () => {
     expect(filed.needs_you).toHaveLength(8);
     const stack = t.svc.cards.stack();
     expect(stack.cards).toHaveLength(5);
-    expect(stack.waiting).toBe(3);
+    // The deck never exceeds max_cards: the rest are deferred to a later stack
+    // (a future visible_from), never queued visibly behind a counter.
+    expect(activeDue(t)).toBe(5);
+    const deferred = t.svc.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM cards WHERE status = 'active' AND visible_from > ?", [t.clock.now().toISOString()])!.n;
+    expect(deferred).toBe(3);
+    // Nothing is lost: every card still exists as an active record.
+    expect(activeDue(t) + deferred).toBe(8);
+  });
+
+  it("keeps at most max_cards active, and deferred cards come back later in priority order", async () => {
+    t = makeApp({ at: atLocal("2026-10-05", "10:00", NY).toISOString() });
+    t.svc.scheduler.ensureSystemWakes();
+    t.svc.settings.update({ stack: { ...t.svc.settings.get().stack, max_cards: 2 } }, t.clock.now());
+    const make = (n: number, priority: number) =>
+      t.svc.cards.create({
+        kind: "know",
+        source: "review",
+        ref_id: `r${n}`,
+        title: `Note ${n}`,
+        why: null,
+        options: [{ key: "ok", label: "Got it", detail: null, work: false, act: { t: "ack" } }],
+        priority,
+      });
+    const d = make(4, 40);
+    make(3, 30);
+    make(2, 20);
+    make(1, 10);
+    const titles = () => t.svc.cards.stack().cards.map((c) => c.title);
+    expect(activeDue(t)).toBe(2);
+    expect(titles()).toEqual(["Note 4", "Note 3"]);
+    // Answering frees the deck, but the deferred cards still wait for their moment.
+    await t.svc.cards.respond(d.id, "yes");
+    expect(titles()).toEqual(["Note 3"]);
+    // At the next check-in they come back, highest priority first.
+    t.clock.advance(hours(12));
+    expect(titles()).toEqual(["Note 3", "Note 2"]);
+    await t.svc.cards.respond(t.svc.cards.stack().cards[0].id, "yes");
+    t.clock.advance(hours(12));
+    expect(titles()).toEqual(["Note 2", "Note 1"]);
+    // Nothing is lost: every card still exists with its own history.
+    const rows = t.svc.db.all<{ ref_id: string; status: string }>("SELECT ref_id, status FROM cards WHERE ref_id IN ('r1','r2','r3','r4') ORDER BY ref_id");
+    expect(rows.map((r) => r.status)).toEqual(["active", "active", "done", "done"]);
   });
 });
 
